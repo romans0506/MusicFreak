@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { rateLimit, callerKey } from "@/lib/rate-limit"
-import { spotifyUserFetch, spotifyCooldown } from "@/lib/spotify"
+import { spotifyUserFetch, spotifyCooldown, resolveSpotifyUserToken } from "@/lib/spotify"
 
 export type Question = {
   id: string
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
 
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
-  if (!session?.provider_token) return NextResponse.json({ error: "no_token" }, { status: 401 })
+  if (!session) return NextResponse.json({ error: "no_token" }, { status: 401 })
 
   // Spotify told us to back off — fail fast rather than pile on.
   if (spotifyCooldown() > 0) {
@@ -41,7 +41,10 @@ export async function GET(req: Request) {
     )
   }
 
-  const headers = { Authorization: `Bearer ${session.provider_token}` }
+  const token = await resolveSpotifyUserToken(session)
+  if (!token) return NextResponse.json({ error: "no_token" }, { status: 401 })
+
+  const headers = { Authorization: `Bearer ${token}` }
 
   const [tracksRes, artistsRes] = await Promise.all([
     spotifyUserFetch("https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=long_term", { headers, cache: "no-store" }),

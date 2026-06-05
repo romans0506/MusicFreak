@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { rateLimit, callerKey } from "@/lib/rate-limit"
-import { spotifyUserFetch } from "@/lib/spotify"
+import { spotifyUserFetch, resolveSpotifyUserToken } from "@/lib/spotify"
 
 // Per-user in-memory cache: userId → { data, expiresAt }
 const nowPlayingCache = new Map<string, { data: unknown; expiresAt: number }>()
 const NOW_PLAYING_TTL = 25_000 // 25s — slightly under the 30s poll interval
 
 export async function GET(req: Request) {
-  const limit = rateLimit(`now-playing:${callerKey(req)}`, 4, 30_000)
+  const limit = rateLimit(`now-playing:${callerKey(req)}`, 10, 30_000)
   if (!limit.allowed) return NextResponse.json({ playing: false, rateLimited: true }, { status: 429 })
 
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
-  if (!session?.provider_token) return NextResponse.json({ playing: false })
+  if (!session) return NextResponse.json({ playing: false })
 
   const userId = session.user.id
   const cached = nowPlayingCache.get(userId)
@@ -21,8 +21,11 @@ export async function GET(req: Request) {
     return NextResponse.json(cached.data)
   }
 
+  const token = await resolveSpotifyUserToken(session)
+  if (!token) return NextResponse.json({ playing: false })
+
   const res = await spotifyUserFetch("https://api.spotify.com/v1/me/player/currently-playing", {
-    headers: { Authorization: `Bearer ${session.provider_token}` },
+    headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   })
 

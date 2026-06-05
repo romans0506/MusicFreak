@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { rateLimit, callerKey } from "@/lib/rate-limit"
-import { spotifyUserFetch, spotifyCooldown } from "@/lib/spotify"
+import { spotifyUserFetch, spotifyCooldown, resolveSpotifyUserToken } from "@/lib/spotify"
 
 const topStatsCache = new Map<string, { data: unknown; expiresAt: number }>()
 const TOP_STATS_TTL = 5 * 60_000 // 5 minutes
 
 export async function GET(req: Request) {
-  const limit = rateLimit(`top-stats:${callerKey(req)}`, 4, 60_000)
+  const limit = rateLimit(`top-stats:${callerKey(req)}`, 10, 60_000)
   if (!limit.allowed) {
     return NextResponse.json(
       { error: "rate_limited" },
@@ -17,7 +17,7 @@ export async function GET(req: Request) {
 
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
-  if (!session?.provider_token) return NextResponse.json({ error: "no_token" }, { status: 401 })
+  if (!session) return NextResponse.json({ error: "no_token" }, { status: 401 })
 
   const userId = session.user.id
   const cached = topStatsCache.get(userId)
@@ -30,7 +30,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ topArtists: [], topTracks: [], topAlbums: [], rateLimited: true })
   }
 
-  const headers = { Authorization: `Bearer ${session.provider_token}` }
+  const token = await resolveSpotifyUserToken(session)
+  if (!token) return NextResponse.json({ error: "no_token" }, { status: 401 })
+
+  const headers = { Authorization: `Bearer ${token}` }
 
   const [artistsRes, tracksRes] = await Promise.all([
     spotifyUserFetch("https://api.spotify.com/v1/me/top/artists?limit=5&time_range=short_term", { headers, cache: "no-store" }),

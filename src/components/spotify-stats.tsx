@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { motion } from "framer-motion"
 import Link from "next/link"
-import { Music2, Disc3, Mic2, Radio, Heart } from "lucide-react"
+import { Music2, Disc3, Mic2, Radio, Heart, History, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 
@@ -26,6 +26,28 @@ type TopStats = {
   topAlbums: { id: string; name: string; artist: string; image?: string; count: number }[]
 }
 
+type RecentTrack = {
+  playedAt: string
+  id: string
+  name: string
+  artists: string
+  albumArt?: string | null
+  url?: string | null
+}
+
+const RECENT_PREVIEW_COUNT = 4
+
+/** "just now" / "23m ago" / "3h ago" / "14:32" for older-than-today plays. */
+function formatPlayed(playedAt: string): string {
+  const then = new Date(playedAt)
+  const diffMin = Math.floor((Date.now() - then.getTime()) / 60000)
+  if (diffMin < 1) return "just now"
+  if (diffMin < 60) return `${diffMin}m ago`
+  const isToday = then.toDateString() === new Date().toDateString()
+  if (isToday) return `${Math.floor(diffMin / 60)}h ago`
+  return then.toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" })
+}
+
 function PopularityBar({ value }: { value: number }) {
   return (
     <div className="flex items-center gap-2 shrink-0">
@@ -40,15 +62,12 @@ function PopularityBar({ value }: { value: number }) {
   )
 }
 
-function formatTime(ms: number) {
-  const s = Math.floor(ms / 1000)
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
-}
-
 export default function SpotifyStats() {
   const [nowPlaying, setNowPlaying] = useState<NowPlaying | null>(null)
   const [stats, setStats] = useState<TopStats | null>(null)
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set())
+  const [recent, setRecent] = useState<RecentTrack[] | null>(null)
+  const [showAllRecent, setShowAllRecent] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -80,6 +99,12 @@ export default function SpotifyStats() {
     fetch("/api/spotify/top-stats")
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setStats(d))
+  }, [])
+
+  useEffect(() => {
+    fetch("/api/spotify/recently-played")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => d && setRecent(d.items ?? []))
   }, [])
 
   return (
@@ -130,17 +155,6 @@ export default function SpotifyStats() {
                 </div>
                 <p className="font-semibold truncate">{nowPlaying.track.name}</p>
                 <p className="text-sm text-muted-foreground truncate">{nowPlaying.track.artists} · {nowPlaying.track.album}</p>
-                {/* Progress bar */}
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground tabular-nums">{formatTime(nowPlaying.track.progressMs)}</span>
-                  <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-primary"
-                      style={{ width: `${(nowPlaying.track.progressMs / nowPlaying.track.durationMs) * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-muted-foreground tabular-nums">{formatTime(nowPlaying.track.durationMs)}</span>
-                </div>
               </div>
             </div>
           ) : (
@@ -153,6 +167,49 @@ export default function SpotifyStats() {
           )}
         </div>
       </motion.div>
+
+      {/* Recently Played */}
+      {recent && recent.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05 }}>
+          <div className="flex items-center gap-2 mb-3">
+            <History className="size-4 text-primary" />
+            <h2 className="text-lg font-semibold">Recently Played</h2>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-border bg-card">
+            {(showAllRecent ? recent : recent.slice(0, RECENT_PREVIEW_COUNT)).map((track, i, arr) => (
+              <a
+                key={`${track.id}-${track.playedAt}`}
+                href={track.url ?? `https://open.spotify.com/track/${track.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn("flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40", i < arr.length - 1 && "border-b border-border")}
+              >
+                {track.albumArt ? (
+                  <img src={track.albumArt} alt={track.name} className="size-9 rounded-md object-cover shrink-0" />
+                ) : (
+                  <div className="flex size-9 items-center justify-center rounded-md bg-muted shrink-0">
+                    <Music2 className="size-4 text-muted-foreground/40" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{track.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{track.artists}</p>
+                </div>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatPlayed(track.playedAt)}</span>
+              </a>
+            ))}
+          </div>
+          {recent.length > RECENT_PREVIEW_COUNT && (
+            <button
+              onClick={() => setShowAllRecent((v) => !v)}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-card py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            >
+              {showAllRecent ? "Show less" : `Show ${recent.length - RECENT_PREVIEW_COUNT} more`}
+              <ChevronDown className={cn("size-4 transition-transform", showAllRecent && "rotate-180")} />
+            </button>
+          )}
+        </motion.div>
+      )}
 
       {stats && (
         <div className="grid gap-8 lg:grid-cols-2">

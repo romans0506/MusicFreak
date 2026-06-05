@@ -23,6 +23,89 @@ export function noteSpotify429(retryAfterHeader?: string | null) {
   console.warn(`[spotify] 429 received — backing off for ${waitMs / 1000}s`)
 }
 
+// Refreshed user access tokens, keyed by the user's provider_refresh_token.
+// Spotify's provider_token (in the Supabase session) expires after ~1h and is
+// dropped on session refresh, so we mint a fresh one from the refresh token.
+const userTokenCache = new Map<string, { value: string; expiresAt: number }>()
+
+// In-flight refreshes, keyed by refresh token. The profile page fires several
+// API calls at once; without this they'd each POST to /api/token in parallel,
+// and racing token requests are a fast path to a 429 on accounts.spotify.com.
+const inflightRefresh = new Map<string, Promise<string | null>>()
+
+/**
+ * Exchange a Spotify provider_refresh_token for a fresh user access token.
+ * Cached until expiry (60s safety margin). Concurrent callers share one
+ * request. Respects the global cool-down.
+ */
+export async function refreshSpotifyUserToken(refreshToken: string): Promise<string | null> {
+  const cached = userTokenCache.get(refreshToken)
+  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.value
+
+  const existing = inflightRefresh.get(refreshToken)
+  if (existing) return existing
+
+  const clientId = process.env.SPOTIFY_CLIENT_ID
+  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
+  if (!clientId || !clientSecret) return null
+  if (spotifyCooldown() > 0) return null
+
+  const request = (async (): Promise<string | null> => {
+    const res = await fetch("https://accounts.spotify.com/api/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+      cache: "no-store",
+    })
+
+    if (res.status === 429) {
+      noteSpotify429(res.headers.get("retry-after"))
+      return null
+    }
+    if (!res.ok) {
+      console.error("[spotify] refresh_token failed", res.status, await res.text())
+      return null
+    }
+
+    const data = await res.json()
+    if (!data.access_token) return null
+
+    userTokenCache.set(refreshToken, {
+      value: data.access_token,
+      expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
+    })
+    return data.access_token
+  })()
+
+  inflightRefresh.set(refreshToken, request)
+  try {
+    return await request
+  } finally {
+    inflightRefresh.delete(refreshToken)
+  }
+}
+
+/**
+ * Resolve a usable Spotify *user* access token from a Supabase session.
+ * Prefers the session's provider_token; when that's missing/expired, mints a
+ * fresh one from provider_refresh_token. Returns null if neither is available
+ * (caller should treat as "needs re-auth").
+ */
+export async function resolveSpotifyUserToken(session: {
+  provider_token?: string | null
+  provider_refresh_token?: string | null
+} | null): Promise<string | null> {
+  if (!session) return null
+  if (session.provider_refresh_token) {
+    const refreshed = await refreshSpotifyUserToken(session.provider_refresh_token)
+    if (refreshed) return refreshed
+  }
+  return session.provider_token ?? null
+}
+
 /**
  * Wrapper for Spotify calls made with the *user* token.
  * Feeds the same global cool-down the app-token path uses: a 429 on any
@@ -43,6 +126,10 @@ export async function spotifyUserFetch(
   return res
 }
 
+// In-flight app-token request, shared by concurrent callers (same reason as
+// inflightRefresh above — avoid racing token requests that trigger a 429).
+let inflightAppToken: Promise<string | null> | null = null
+
 export async function getSpotifyAppToken(): Promise<string | null> {
   const clientId = process.env.SPOTIFY_CLIENT_ID
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
@@ -56,32 +143,43 @@ export async function getSpotifyAppToken(): Promise<string | null> {
     return cachedToken.value
   }
 
-  const res = await fetch("https://accounts.spotify.com/api/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
-    },
-    body: "grant_type=client_credentials",
-    cache: "no-store",
-  })
+  if (inflightAppToken) return inflightAppToken
 
-  if (res.status === 429) {
-    noteSpotify429(res.headers.get("retry-after"))
-    return null
+  const request = (async (): Promise<string | null> => {
+    const res = await fetch("https://accounts.spotify.com/api/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      },
+      body: "grant_type=client_credentials",
+      cache: "no-store",
+    })
+
+    if (res.status === 429) {
+      noteSpotify429(res.headers.get("retry-after"))
+      return null
+    }
+
+    if (!res.ok) {
+      console.error("[spotify] client_credentials failed", res.status, await res.text())
+      return null
+    }
+
+    const data = await res.json()
+    if (!data.access_token) return null
+
+    cachedToken = {
+      value: data.access_token,
+      expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
+    }
+    return cachedToken.value
+  })()
+
+  inflightAppToken = request
+  try {
+    return await request
+  } finally {
+    inflightAppToken = null
   }
-
-  if (!res.ok) {
-    console.error("[spotify] client_credentials failed", res.status, await res.text())
-    return null
-  }
-
-  const data = await res.json()
-  if (!data.access_token) return null
-
-  cachedToken = {
-    value: data.access_token,
-    expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
-  }
-  return cachedToken.value
 }

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import AppNav from "@/components/app-nav"
+import PlayScrobbler from "@/components/play-scrobbler"
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -21,6 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="absolute -right-60 bottom-40 size-[500px] rounded-full bg-primary/5 blur-3xl" />
       </div>
       <AppNav user={user} profile={profile ?? null} />
+      <PlayScrobbler />
       <main className="relative mx-auto max-w-6xl px-6 pt-24 pb-16">
         {children}
       </main>

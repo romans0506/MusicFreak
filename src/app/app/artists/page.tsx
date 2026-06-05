@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { resolveSpotifyUserToken } from "@/lib/spotify"
 import ArtistsView from "@/components/artists-view"
 
 type SpotifyArtist = {
@@ -13,17 +14,18 @@ type SpotifyArtist = {
 export default async function ArtistsPage() {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
+  const token = await resolveSpotifyUserToken(session)
 
   let artists: SpotifyArtist[] = []
   let error: string | null = null
 
-  if (session?.provider_token) {
+  if (token) {
     // Per-user data — must NOT land in the shared Data Cache, so no-store.
     // (Only hit on tab navigation, so the rate-limit cost is negligible.)
     const res = await fetch(
       "https://api.spotify.com/v1/me/top/artists?limit=24&time_range=medium_term",
       {
-        headers: { Authorization: `Bearer ${session.provider_token}` },
+        headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       }
     )

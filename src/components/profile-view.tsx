@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { motion } from "framer-motion"
 import Link from "next/link"
-import { ArrowLeft, Headphones, Play, Brain, Mic2, Trophy, Gamepad2, Pencil } from "lucide-react"
+import { ArrowLeft, Headphones, Play, Brain, Mic2, Trophy, Gamepad2, Pencil, BarChart3, Music2 } from "lucide-react"
 import type { User } from "@supabase/supabase-js"
 import { cn } from "@/lib/utils"
 import SpotifyStats from "@/components/spotify-stats"
@@ -25,6 +25,14 @@ type FavoriteSong = {
   album_art: string | null
 }
 
+type MostPlayed = {
+  track_id: string
+  name: string
+  artists: string | null
+  album_art: string | null
+  play_count: number
+}
+
 type Profile = {
   username: string | null
   bio: string | null
@@ -40,6 +48,7 @@ type Props = {
   rank: number | null
   favoriteSongs: FavoriteSong[]
   profile: Profile | null
+  mostPlayed: MostPlayed[]
 }
 
 const GAME_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
@@ -58,7 +67,7 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-export default function ProfileView({ user, scores, totalPoints, gamesPlayed, rank, favoriteSongs, profile }: Props) {
+export default function ProfileView({ user, scores, totalPoints, gamesPlayed, rank, favoriteSongs, profile, mostPlayed }: Props) {
   const spotifyName =
     user.user_metadata?.full_name ??
     user.user_metadata?.name ??
@@ -177,6 +186,59 @@ export default function ProfileView({ user, scores, totalPoints, gamesPlayed, ra
         >
           <FavoriteSongs initialFavorites={favoriteSongs} />
         </motion.div>
+
+        {/* Most played (tracked by us) */}
+        {mostPlayed.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.22 }}
+            className="mb-10"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="size-4 text-primary" />
+                <h2 className="text-lg font-semibold">Your Most Played</h2>
+              </div>
+              <Link href="/app/stats" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+                View all
+              </Link>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-border bg-card">
+              {mostPlayed.map((track, i) => (
+                <a
+                  key={track.track_id}
+                  href={`https://open.spotify.com/track/${track.track_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40",
+                    i < mostPlayed.length - 1 && "border-b border-border"
+                  )}
+                >
+                  <span className="w-5 shrink-0 text-sm font-semibold text-muted-foreground">{i + 1}</span>
+                  {track.album_art ? (
+                    <img src={track.album_art} alt={track.name} className="size-9 shrink-0 rounded-md object-cover" />
+                  ) : (
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
+                      <Music2 className="size-4 text-muted-foreground/40" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{track.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{track.artists}</p>
+                  </div>
+                  <span className="shrink-0 text-sm font-semibold tabular-nums text-primary">
+                    {Number(track.play_count)}
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      {Number(track.play_count) === 1 ? "play" : "plays"}
+                    </span>
+                  </span>
+                </a>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
         {/* Spotify stats */}
         <motion.div

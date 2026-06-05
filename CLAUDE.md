@@ -22,9 +22,10 @@ There is no test suite yet. Verify changes with `npx tsc --noEmit`.
 
 **Route layout:**
 - `/` — public landing/onboarding. Server-redirects authenticated users to `/app`.
-- `/app/*` — protected area. `src/app/app/layout.tsx` is the auth gate (`getUser()` → redirect to `/` if absent) and renders `AppNav` (tab pills: Games / Leaderboard / Artists). Tabs: `/app`, `/app/leaderboard`, `/app/artists`, `/app/artists/[id]`, `/app/games/music-quiz`.
+- `/app/*` — protected area. `src/app/app/layout.tsx` is the auth gate (`getUser()` → redirect to `/` if absent), renders `AppNav` (tab pills: Games / Leaderboard / Artists / Stats), and mounts the headless `<PlayScrobbler/>` (see Listening history). Tabs: `/app`, `/app/leaderboard`, `/app/artists`, `/app/artists/[id]`, `/app/games/music-quiz`, `/app/stats`.
 - `/profile` — protected profile page (note: lives at `/profile`, **not** `/app/profile`).
 - `/auth/callback`, `/auth/error` — OAuth handling.
+- `/api/wrapped` — `next/og` `ImageResponse` route that renders a Spotify-Wrapped-style PNG (1080×1920) from the user's own `play_history`. `ImageResponse` only supports flexbox + a CSS subset (no grid), and no oklch — use hex.
 
 **Data flow pattern:** Server Components (`page.tsx`) fetch from Supabase + Spotify and pass typed props down to Client Components (animation, interactivity). Client Components are marked `"use client"` and use Framer Motion.
 
@@ -38,8 +39,10 @@ This is the most error-prone area. Spotify deprecated many catalog endpoints (No
 
 | Token | Source | Use for |
 |---|---|---|
-| **User token** (`session.provider_token`) | per-user OAuth session | personal data — `/v1/me/...` only (top tracks/artists, now-playing, recently-played). |
-| **App token** (Client Credentials) | `getSpotifyAppToken()` in `src/lib/spotify.ts` | catalog — `/v1/search`, `/v1/artists/{id}/albums`. |
+| **User token** | `resolveSpotifyUserToken(session)` in `src/lib/spotify.ts` | personal data — `/v1/me/...` only (top tracks/artists, now-playing, recently-played). |
+| **App token** (Client Credentials) | `getSpotifyAppToken()` in `src/lib/spotify.ts` | catalog — `/v1/search`, `/v1/artists/{id}/albums`, `/v1/artists?ids=`. |
+
+**Never read `session.provider_token` directly.** It expires after ~1h and is dropped on Supabase session refresh (this was the cause of recurring 401s/login failures). Always go through `resolveSpotifyUserToken(session)`, which mints a fresh user token from `session.provider_refresh_token` (cached until expiry) and falls back to `provider_token`. Token minting is **de-duplicated by an in-flight promise** (both user-refresh and app-token paths) — concurrent callers share one request, since racing `/api/token` calls themselves trigger 429s.
 
 **Endpoint reality:**
 - `/v1/me/...` with the user token is the only reliable source of personal listening data.
@@ -47,7 +50,7 @@ This is the most error-prone area. Spotify deprecated many catalog endpoints (No
 - Catalog endpoints (search, albums) **require the app token** — they 400/403 with a user token.
 - `preview_url` is now `null` on most tracks. UI must fall back (e.g. open the track on Spotify) rather than assume a 30s preview exists.
 
-**Proxy-route pattern:** Client Components never call Spotify directly — the browser's `provider_token` becomes unreliable after a Supabase session refresh. Instead they call our own route handlers under `src/app/api/spotify/*`, which read the token server-side. `artist-tracks`, `top-stats`, `currently-playing` use the user token; `search`, `artist-discography` use the app token (with a user-history fallback).
+**Proxy-route pattern:** Client Components never call Spotify directly — the browser's `provider_token` becomes unreliable after a Supabase session refresh. Instead they call our own route handlers under `src/app/api/spotify/*`, which resolve the token server-side. User-token routes: `artist-tracks`, `top-stats`, `currently-playing`, `recently-played`, `ingest-plays`. App-token routes: `search`, `artist-discography` (with a user-history fallback). All user-token fetches go through `spotifyUserFetch()` (`src/lib/spotify.ts`), which honours the global cool-down and feeds a 429 back into it — a 429 on a `/v1/me/...` call shares the `client_id` and can break login just like an app-token 429, so user-token routes must trip the cool-down too (they previously swallowed 429s silently).
 
 **Env vars** (`.env.local`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`.
 
@@ -57,11 +60,19 @@ This is the most error-prone area. Spotify deprecated many catalog endpoints (No
 
 Requesting a fresh app token per call once flooded Spotify and triggered a `429` on the whole `client_id` — which **also breaks OAuth login** (Supabase's profile fetch shares the `client_id`). Mitigations now in place:
 
-- `src/lib/spotify.ts` caches the app token until expiry, and on a Spotify `429` sets a global cool-down (`spotifyCooldown()` / `noteSpotify429()`, respects `Retry-After`) during which it stops hitting Spotify entirely.
+- `src/lib/spotify.ts` caches both token types until expiry (de-duped via in-flight promises), and on a Spotify `429` sets a global cool-down (`spotifyCooldown()` / `noteSpotify429()`, respects `Retry-After`) during which it stops hitting Spotify entirely. Every route checks the cool-down and returns a graceful empty/`rateLimited` payload while it's active.
 - `src/lib/rate-limit.ts` — in-memory fixed-window limiter keyed by IP (`callerKey`). Applied to every `src/app/api/spotify/*` route and `api/quiz/generate`; returns `429` + `Retry-After`.
-- `search` also caches results (60s TTL).
+- Per-user response caches sit in front of the user-token routes: `currently-playing` (25s), `top-stats` (5min), `recently-played` (60s), and `search` (60s). These do the real work of keeping Spotify load down — the self-limiter is just abuse protection, so its thresholds can be loose.
 
 All of this state is **in-memory** — fine for dev/single instance, but resets on serverless cold starts and is not shared across instances. For real production, back the token cache, cool-down, and limiter with Redis/Upstash (same API surface).
+
+## Listening history & stats
+
+Spotify exposes **no play counts**, so we accumulate our own from `/v1/me/player/recently-played` (which returns the last ~50 plays with `played_at`, but only counts plays longer than ~30s — there is **no** way to know how much of a track was actually heard, so an exact "listened ≥70%" rule is impossible).
+
+Flow: `<PlayScrobbler/>` (headless client component in the app layout, fires once per app session) → `POST /api/spotify/ingest-plays` → fetches recently-played with an `after=<lastStoredMs>` cursor → upserts into `play_history` with `onConflict: "user_id,played_at", ignoreDuplicates: true`. The ingest route self-throttles per user (30s) so reloads don't re-poll Spotify.
+
+Consumers of the aggregation RPCs: `/app/stats` (`StatsView` — streaks/badges from `src/lib/stats.ts`, hour histogram, genre breakdown), the profile "Your Most Played" section, and `/api/wrapped`. Streak/badge math lives in `src/lib/stats.ts` as pure functions (`computeStreak`, `computeBadges`) — keep it there, not in components.
 
 ## Supabase
 
@@ -79,7 +90,10 @@ Two clients — never mix them up:
 | `daily_content` | One row per date. Queried by today's ISO date string. |
 | `favorite_artists` | User's favourite artists (`artist_id`, `artist_name`, `artist_image`). Public-read so the artist page can list "fans". |
 | `favorite_songs` | User's favourite songs (`track_id`, `name`, `artists`, `album_art`, `artist_ids text[]`). Public-read. `artist_ids` powers "Loved by MusicFreak" counts on artist pages. |
+| `play_history` | One row per Spotify play, accumulated by us (Spotify gives no play counts). Columns: `track_id, name, artists, artist_id, album_id, album_name, album_art, duration_ms, played_at`. `unique (user_id, played_at)` is the dedup key. RLS owner-only. |
 | `leaderboard` | View — `profiles` LEFT JOIN `scores`, ordered by `total_points desc`. Exposes `id, username, total_points` (avatars are joined separately from `profiles`). |
+
+**`play_history` aggregation RPCs** (all `security invoker`, so RLS scopes them to `auth.uid()`; all take an optional `p_since timestamptz`): `get_play_counts` (per-track counts), `get_top_artists` (per `artist_id`, with `total_ms` for minutes-listened), `get_top_albums` (per `album_id`), `get_play_days(p_tz)` (distinct days → streaks), `get_play_hours(p_tz)` (hour-of-day histogram). The SQL is **not in the repo** — it's applied manually in the Supabase SQL editor. `get_top_artists`/`get_top_albums`/minutes only reflect plays ingested after the `artist_id`/`album_*`/`duration_ms` columns were added (older rows have them null).
 
 All tables have RLS. Owner-write policies use `auth.uid() = user_id`; `favorite_*` add a `using (true)` SELECT policy for public read.
 

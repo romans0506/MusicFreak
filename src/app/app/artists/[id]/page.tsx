@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { resolveSpotifyUserToken } from "@/lib/spotify"
 import ArtistDetail from "@/components/artist-detail"
 import { toggleFavoriteArtist } from "./actions"
 
@@ -30,7 +31,8 @@ export default async function ArtistPage({
     supabase.auth.getSession(),
   ])
 
-  if (!session?.provider_token) {
+  const token = await resolveSpotifyUserToken(session)
+  if (!token) {
     return (
       <div className="flex flex-col items-center gap-3 py-20 text-center">
         <p className="font-medium">Session expired</p>
@@ -41,7 +43,7 @@ export default async function ArtistPage({
 
   const [artistRes, { data: fans }, { data: lovedSongsRaw }] = await Promise.all([
     fetch(`https://api.spotify.com/v1/artists/${id}`, {
-      headers: { Authorization: `Bearer ${session.provider_token}` },
+      headers: { Authorization: `Bearer ${token}` },
       next: { revalidate: 3600 },
     }),
     supabase

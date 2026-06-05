@@ -11,6 +11,7 @@ const TABS = [
   { label: "Games", href: "/app" },
   { label: "Leaderboard", href: "/app/leaderboard" },
   { label: "Artists", href: "/app/artists" },
+  { label: "Stats", href: "/app/stats" },
 ]
 
 type Profile = { username: string | null; custom_avatar_url: string | null } | null
