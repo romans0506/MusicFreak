@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Music2, BarChart3, Flame, Sparkles, Trophy, Compass, Moon, Heart, type LucideIcon } from "lucide-react"
+import { Music2, BarChart3, Flame, Sparkles, Trophy, Compass, Moon, Heart, Clock, Lock, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { PlayCount, GenreSlice } from "@/app/app/stats/page"
 import type { Badge, BadgeId } from "@/lib/stats"
@@ -24,6 +24,23 @@ const RANGES: { key: Range; label: string }[] = [
   { key: "all", label: "All Time" },
 ]
 
+type ListenKey = "day" | "week" | "month" | "year"
+type Listening = { day: number; week: number; month: number; year: number; total: number }
+
+const PERIODS: { key: ListenKey; label: string; unlockDays: number }[] = [
+  { key: "day", label: "Today", unlockDays: 0 },
+  { key: "week", label: "This Week", unlockDays: 7 },
+  { key: "month", label: "This Month", unlockDays: 30 },
+  { key: "year", label: "This Year", unlockDays: 365 },
+]
+
+/** ms → "Xh Ym" (or "Ym" under an hour). */
+function formatListen(ms: number): string {
+  const minutes = Math.round(ms / 60000)
+  if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+  return `${minutes}m`
+}
+
 export default function StatsView({
   week,
   month,
@@ -33,6 +50,8 @@ export default function StatsView({
   badges,
   hourly,
   genres,
+  listening,
+  trackedDays,
 }: {
   week: PlayCount[]
   month: PlayCount[]
@@ -42,6 +61,8 @@ export default function StatsView({
   badges: Badge[]
   hourly: number[]
   genres: GenreSlice[]
+  listening: Listening
+  trackedDays: number
 }) {
   const maxHour = Math.max(1, ...hourly)
   const peakHour = hourly.indexOf(Math.max(...hourly))
@@ -79,6 +100,50 @@ export default function StatsView({
         <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-5">
           <span className="text-2xl font-bold text-primary">{all.length.toLocaleString("en")}</span>
           <span className="text-sm text-muted-foreground">Unique songs</span>
+        </div>
+      </div>
+
+      {/* Listening time */}
+      <div className="mb-8">
+        <div className="mb-3 flex items-center gap-2">
+          <Clock className="size-4 text-primary" />
+          <h2 className="text-lg font-semibold">Listening time</h2>
+        </div>
+        <p className="mb-4 text-sm text-muted-foreground">
+          {listening.total > 0 ? (
+            <>
+              You&apos;ve listened for{" "}
+              <span className="font-semibold text-foreground">{formatListen(listening.total)}</span>{" "}
+              ({Math.round(listening.total / 60000).toLocaleString("en")} minutes) since you started.
+            </>
+          ) : (
+            "Keep the app open while you listen on Spotify — your minutes will add up here."
+          )}
+        </p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {PERIODS.map((p) => {
+            const ms = listening[p.key]
+            const locked = trackedDays < p.unlockDays
+            const remaining = p.unlockDays - trackedDays
+            return (
+              <div key={p.key} className="flex min-h-[104px] flex-col justify-center gap-1 rounded-2xl border border-border bg-card p-5">
+                {locked ? (
+                  <div className="flex flex-col items-center gap-1.5 text-center">
+                    <Lock className="size-5 text-muted-foreground/50" />
+                    <span className="text-sm font-medium text-muted-foreground">{p.label}</span>
+                    <span className="text-xs text-muted-foreground/70">
+                      Unlocks in {remaining} day{remaining === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <span className="text-2xl font-bold text-primary">{formatListen(ms)}</span>
+                    <span className="text-sm text-muted-foreground">{p.label}</span>
+                  </>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { Headphones, Play, Brain, Mic2, ChevronRight } from "lucide-react"
+import { Headphones, Scale, Brain, Mic2, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -9,20 +9,20 @@ const GAMES = [
   {
     id: "guess-second",
     icon: Headphones,
-    title: "Guess in a Second",
-    description: "Listen to a 1-second clip and name the song before everyone else",
+    title: "Name That Song",
+    description: "Pick an artist and guess their song from a 5-second clip",
     difficulty: "Medium",
     difficultyColor: "text-yellow-400",
     iconClass: "bg-primary/10 text-primary",
     borderClass: "border-primary/20 hover:border-primary/40",
   },
   {
-    id: "guess-clip",
-    icon: Play,
-    title: "Guess the Clip",
-    description: "A frame from a music video — guess the song hidden behind it",
-    difficulty: "Hard",
-    difficultyColor: "text-red-400",
+    id: "higher-lower",
+    icon: Scale,
+    title: "Higher or Lower",
+    description: "Two artists, one question: who has more followers?",
+    difficulty: "Easy",
+    difficultyColor: "text-green-400",
     iconClass: "bg-violet-500/10 text-violet-400",
     borderClass: "border-violet-500/20 hover:border-violet-500/40",
   },

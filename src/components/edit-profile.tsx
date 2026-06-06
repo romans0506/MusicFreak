@@ -1,11 +1,15 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { X, Camera, ImagePlus, Loader2, Music2 } from "lucide-react"
+import countries from "i18n-iso-countries"
+import enLocale from "i18n-iso-countries/langs/en.json"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { updateProfile } from "@/app/profile/actions"
+
+countries.registerLocale(enLocale)
 
 type Props = {
   open: boolean
@@ -16,8 +20,9 @@ type Props = {
     bio: string
     avatarUrl: string | null
     bannerUrl: string | null
+    country: string | null
   }
-  onSaved: (data: { username: string; bio: string; avatarUrl: string | null; bannerUrl: string | null }) => void
+  onSaved: (data: { username: string; bio: string; avatarUrl: string | null; bannerUrl: string | null; country: string | null }) => void
 }
 
 const MAX_BYTES = 5 * 1024 * 1024 // 5MB
@@ -27,6 +32,14 @@ export default function EditProfile({ open, onClose, userId, initial, onSaved }:
   const [bio, setBio] = useState(initial.bio)
   const [avatarUrl, setAvatarUrl] = useState(initial.avatarUrl)
   const [bannerUrl, setBannerUrl] = useState(initial.bannerUrl)
+  const [country, setCountry] = useState(initial.country ?? "")
+
+  const countryOptions = useMemo(() => {
+    const names = countries.getNames("en", { select: "official" }) as Record<string, string>
+    return Object.entries(names)
+      .map(([code, name]) => ({ code, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [])
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [uploadingBanner, setUploadingBanner] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -72,13 +85,13 @@ export default function EditProfile({ open, onClose, userId, initial, onSaved }:
   async function handleSave() {
     setSaving(true)
     setError(null)
-    const res = await updateProfile({ username, bio, customAvatarUrl: avatarUrl, bannerUrl })
+    const res = await updateProfile({ username, bio, customAvatarUrl: avatarUrl, bannerUrl, country: country || null })
     setSaving(false)
     if (res.error) {
       setError(res.error)
       return
     }
-    onSaved({ username: username.trim(), bio: bio.trim(), avatarUrl, bannerUrl })
+    onSaved({ username: username.trim(), bio: bio.trim(), avatarUrl, bannerUrl, country: country || null })
     onClose()
   }
 
@@ -187,6 +200,21 @@ export default function EditProfile({ open, onClose, userId, initial, onSaved }:
                     className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-primary"
                   />
                   <p className="mt-1 text-right text-xs text-muted-foreground">{bio.length}/140</p>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Country</label>
+                  <select
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-primary"
+                  >
+                    <option value="">Not set</option>
+                    {countryOptions.map((c) => (
+                      <option key={c.code} value={c.code}>{c.name}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">Places you on the Listening Map.</p>
                 </div>
 
                 <p className="text-xs text-muted-foreground">

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
-import MusicQuizGame from "@/components/music-quiz-game"
+import MultipleChoiceGame from "@/components/multiple-choice-game"
 
 export default async function MusicQuizPage() {
   const supabase = await createClient()
@@ -9,7 +9,18 @@ export default async function MusicQuizPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <MusicQuizGame userId={user.id} />
+      <MultipleChoiceGame
+        config={{
+          title: "Music Quiz",
+          subtitle: "10 questions based on your Spotify taste",
+          gameType: "music-quiz",
+          endpoint: "/api/quiz/generate",
+          icon: "brain",
+          iconClass: "bg-blue-500/15 text-blue-400",
+          rules: ["⏱ 15 seconds per question", "⚡ Faster answers = more points", "🏆 Max 1500 points"],
+          errorHint: "Listen to more music on Spotify to unlock this game.",
+        }}
+      />
     </div>
   )
 }

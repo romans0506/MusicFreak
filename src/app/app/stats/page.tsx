@@ -55,7 +55,7 @@ export default async function StatsPage() {
 
   const { data: { session } } = await supabase.auth.getSession()
 
-  const [week, month, all, { data: days }, { data: hours }, { count: favArtists }, genres] = await Promise.all([
+  const [week, month, all, { data: days }, { data: hours }, { count: favArtists }, genres, { data: minutesRows }] = await Promise.all([
     counts(supabase, weekAgo),
     counts(supabase, monthAgo),
     counts(supabase, null),
@@ -63,7 +63,20 @@ export default async function StatsPage() {
     supabase.rpc("get_play_hours", { p_tz: "UTC" }),
     supabase.from("favorite_artists").select("artist_id", { count: "exact", head: true }),
     topGenres(session),
+    supabase.rpc("get_listening_minutes"),
   ])
+
+  const m = (minutesRows as Record<string, string | number | null>[] | null)?.[0]
+  const listening = {
+    day: Number(m?.day_ms ?? 0),
+    week: Number(m?.week_ms ?? 0),
+    month: Number(m?.month_ms ?? 0),
+    year: Number(m?.year_ms ?? 0),
+    total: Number(m?.total_ms ?? 0),
+  }
+  // How long we've been tracking this user — drives which periods are unlocked.
+  const firstPlay = m?.first_play ? new Date(m.first_play as string).getTime() : null
+  const trackedDays = firstPlay ? Math.floor((now - firstPlay) / 86_400_000) : 0
 
   const totalPlays = all.reduce((sum, t) => sum + Number(t.play_count), 0)
 
@@ -108,6 +121,8 @@ export default async function StatsPage() {
         badges={badges}
         hourly={hourly}
         genres={genres}
+        listening={listening}
+        trackedDays={trackedDays}
       />
     </div>
   )

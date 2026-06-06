@@ -2,31 +2,33 @@
 
 import { useRouter } from "next/navigation"
 import { motion } from "framer-motion"
-import { Headphones, Play, Brain, Mic2, ChevronRight, Lock } from "lucide-react"
+import { Headphones, Scale, Brain, Mic2, ChevronRight, Lock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const GAMES = [
   {
     id: "guess-second",
     icon: Headphones,
-    title: "Guess in a Second",
-    description: "Listen to a 1-second clip and name the song before everyone else.",
+    title: "Name That Song",
+    description: "Pick an artist and guess their song from a 5-second clip — faster is better.",
     difficulty: "Medium",
     difficultyColor: "text-yellow-400",
     iconClass: "bg-primary/15 text-primary",
     gradientClass: "from-primary/10 to-transparent",
     available: true,
+    href: "/app/games/name-song",
   },
   {
-    id: "guess-clip",
-    icon: Play,
-    title: "Guess the Clip",
-    description: "A frame from a music video — guess the song hidden behind it.",
-    difficulty: "Hard",
-    difficultyColor: "text-red-400",
+    id: "higher-lower",
+    icon: Scale,
+    title: "Higher or Lower",
+    description: "Two artists, one question: who has more followers? Build a streak.",
+    difficulty: "Easy",
+    difficultyColor: "text-green-400",
     iconClass: "bg-violet-500/15 text-violet-400",
     gradientClass: "from-violet-500/10 to-transparent",
-    available: false,
+    available: false, // paused: needs the artist-metric pool (Spotify rate-limited)
+    href: "/app/games/higher-lower",
   },
   {
     id: "music-quiz",
@@ -49,7 +51,8 @@ const GAMES = [
     difficultyColor: "text-yellow-400",
     iconClass: "bg-orange-500/15 text-orange-400",
     gradientClass: "from-orange-500/10 to-transparent",
-    available: false,
+    available: true,
+    href: "/app/games/lyric-song",
   },
 ]
 

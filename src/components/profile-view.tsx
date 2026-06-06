@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { motion } from "framer-motion"
 import Link from "next/link"
-import { ArrowLeft, Headphones, Play, Brain, Mic2, Trophy, Gamepad2, Pencil, BarChart3, Music2 } from "lucide-react"
+import { ArrowLeft, Headphones, Scale, Brain, Mic2, Trophy, Gamepad2, Pencil, BarChart3, Music2 } from "lucide-react"
 import type { User } from "@supabase/supabase-js"
 import { cn } from "@/lib/utils"
 import SpotifyStats from "@/components/spotify-stats"
@@ -38,6 +38,7 @@ type Profile = {
   bio: string | null
   custom_avatar_url: string | null
   banner_url: string | null
+  country: string | null
 }
 
 type Props = {
@@ -52,10 +53,10 @@ type Props = {
 }
 
 const GAME_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  "guess-second": { label: "Guess in a Second", icon: Headphones, color: "text-primary bg-primary/10" },
-  "guess-clip":   { label: "Guess the Clip",    icon: Play,       color: "text-violet-400 bg-violet-500/10" },
-  "music-quiz":   { label: "Music Quiz",         icon: Brain,      color: "text-blue-400 bg-blue-500/10" },
-  "lyric-song":   { label: "Lyric → Song",       icon: Mic2,       color: "text-orange-400 bg-orange-500/10" },
+  "guess-second": { label: "Name That Song",  icon: Headphones, color: "text-primary bg-primary/10" },
+  "higher-lower": { label: "Higher or Lower", icon: Scale,      color: "text-violet-400 bg-violet-500/10" },
+  "music-quiz":   { label: "Music Quiz",       icon: Brain,      color: "text-blue-400 bg-blue-500/10" },
+  "lyric-song":   { label: "Lyric → Song",     icon: Mic2,       color: "text-orange-400 bg-orange-500/10" },
 }
 
 function timeAgo(dateStr: string) {
@@ -81,6 +82,7 @@ export default function ProfileView({ user, scores, totalPoints, gamesPlayed, ra
     bio: profile?.bio || "",
     avatarUrl: profile?.custom_avatar_url ?? spotifyAvatar,
     bannerUrl: profile?.banner_url ?? null,
+    country: profile?.country ?? null,
   })
 
   const displayName = profileState.username || spotifyName
@@ -308,6 +310,7 @@ export default function ProfileView({ user, scores, totalPoints, gamesPlayed, ra
           bio: profileState.bio,
           avatarUrl: profileState.avatarUrl,
           bannerUrl: profileState.bannerUrl,
+          country: profileState.country,
         }}
         onSaved={(data) => setProfileState(data)}
       />

@@ -22,7 +22,7 @@ There is no test suite yet. Verify changes with `npx tsc --noEmit`.
 
 **Route layout:**
 - `/` — public landing/onboarding. Server-redirects authenticated users to `/app`.
-- `/app/*` — protected area. `src/app/app/layout.tsx` is the auth gate (`getUser()` → redirect to `/` if absent), renders `AppNav` (tab pills: Games / Leaderboard / Artists / Stats), and mounts the headless `<PlayScrobbler/>` (see Listening history). Tabs: `/app`, `/app/leaderboard`, `/app/artists`, `/app/artists/[id]`, `/app/games/music-quiz`, `/app/stats`.
+- `/app/*` — protected area. `src/app/app/layout.tsx` is the auth gate (`getUser()` → redirect to `/` if absent), renders `AppNav` (tab pills: Games / Leaderboard / Artists / Map / Stats), and mounts the headless `<PlayScrobbler/>` (see Listening history). Tabs: `/app`, `/app/leaderboard`, `/app/artists`, `/app/artists/[id]`, `/app/games/{name-song,higher-lower,music-quiz,lyric-song}`, `/app/map`, `/app/stats`.
 - `/profile` — protected profile page (note: lives at `/profile`, **not** `/app/profile`).
 - `/auth/callback`, `/auth/error` — OAuth handling.
 - `/api/wrapped` — `next/og` `ImageResponse` route that renders a Spotify-Wrapped-style PNG (1080×1920) from the user's own `play_history`. `ImageResponse` only supports flexbox + a CSS subset (no grid), and no oklch — use hex.
@@ -70,9 +70,30 @@ All of this state is **in-memory** — fine for dev/single instance, but resets 
 
 Spotify exposes **no play counts**, so we accumulate our own from `/v1/me/player/recently-played` (which returns the last ~50 plays with `played_at`, but only counts plays longer than ~30s — there is **no** way to know how much of a track was actually heard, so an exact "listened ≥70%" rule is impossible).
 
-Flow: `<PlayScrobbler/>` (headless client component in the app layout, fires once per app session) → `POST /api/spotify/ingest-plays` → fetches recently-played with an `after=<lastStoredMs>` cursor → upserts into `play_history` with `onConflict: "user_id,played_at", ignoreDuplicates: true`. The ingest route self-throttles per user (30s) so reloads don't re-poll Spotify.
+Flow: `<PlayScrobbler/>` (headless client component in the app layout; polls on mount, every 60s, and on tab focus/visibility so plays are captured without a reload) → `POST /api/spotify/ingest-plays` → fetches recently-played with an `after=<lastStoredMs>` cursor → upserts into `play_history` with `onConflict: "user_id,played_at", ignoreDuplicates: true`. The ingest route self-throttles per user (30s) so reloads don't re-poll Spotify.
 
 Consumers of the aggregation RPCs: `/app/stats` (`StatsView` — streaks/badges from `src/lib/stats.ts`, hour histogram, genre breakdown), the profile "Your Most Played" section, and `/api/wrapped`. Streak/badge math lives in `src/lib/stats.ts` as pure functions (`computeStreak`, `computeBadges`) — keep it there, not in components.
+
+## Games
+
+Each game lives at `/app/games/<slug>` with a server `page.tsx` (auth gate) that renders a client game component. Generators are route handlers under `src/app/api/games/<slug>/generate` (rate-limited via `src/lib/rate-limit.ts`, and they respect `spotifyCooldown()`). All games persist a final score via `POST /api/scores` (`{ game_type, points }`).
+
+- **Music Quiz** (`music-quiz`) & **Lyric → Song** (`lyric-song`) share one UI: `src/components/multiple-choice-game.tsx` (`MultipleChoiceGame`), driven by a `QuizConfig` (title, endpoint, gameType, icon, rules). A generator returns `{ questions: Question[] }` where `Question = { id, question, hint?, image, options, correctIndex }`. To add another multiple-choice game, write a generator returning that shape and point a page at `MultipleChoiceGame` — don't fork the component.
+- **Higher or Lower** (`higher-lower`) and **Name That Song** (`guess-second`) have bespoke components (`higher-lower-game.tsx`, `name-song-game.tsx`) because their UX differs (streak cards / audio player).
+
+**External no-key APIs** (because Spotify can't provide these):
+- **Lyrics** → `lrclib.net` (`/api/search?track_name=&artist_name=`), free, no auth. Send a `User-Agent`. Used by `lyric-song` to build snippets from the user's top tracks; it skips lines containing the title/artist so the answer isn't given away.
+- **Audio previews** → `itunes.apple.com/search?term=&entity=song` (30s `previewUrl`, free, no auth). This is the **workaround for Spotify's null `preview_url`** — `name-song` plays the first 5s of the iTunes preview. Track *lists* still come from Spotify catalog (app token, albums→tracks) with a user-history fallback.
+
+`name-song` reuses `guess-second` as its `game_type`. **Adding a new game_type requires updating the `scores.game_type` CHECK constraint in Supabase** (SQL not in repo — applied manually). Score labels/icons for the profile activity feed live in `GAME_META` in `src/components/profile-view.tsx`; the playable cards live in `games-grid.tsx` (in-app) and `games-preview.tsx` (landing).
+
+## Listening Map
+
+`/app/map` paints a world map where each country is filled with its #1 artist (by minutes listened) across **all** MusicFreak users. Built without `react-simple-maps` (its peer-deps cap at React 18; this project is on React 19) — instead: **d3-geo** (`geoEqualEarth` projection + `geoPath`) + **topojson-client** (`feature()`) render plain SVG `<path>`s in the client `WorldMap` component, and **i18n-iso-countries** maps the topojson's numeric ISO ids ↔ alpha-2 codes. The world topology is a static asset at `public/world-110m.json` (world-atlas `countries-110m`). Each data country is filled via an SVG `<clipPath>` + `<image>` (artist photo); click → detail panel (top artists + top listeners + minutes).
+
+`play_history` has **no artist image**, so the map/detail routes resolve artist photos at request time via `fetchSpotifyArtists(ids)` in `src/lib/spotify.ts` (app token, batched `/v1/artists?ids=`).
+
+**Country source:** `profiles.country` (ISO alpha-2). Auto-detected from Spotify `/v1/me` `country` on first map load (requires the `user-read-private` scope on the Supabase Spotify provider) and upserted; users can also set it manually via the profile editor (`country` `<select>` in `edit-profile.tsx` → `updateProfile`).
 
 ## Supabase
 
@@ -85,15 +106,17 @@ Two clients — never mix them up:
 
 | Table / View | Purpose |
 |---|---|
-| `profiles` | Extends `auth.users`, auto-created on signup via trigger. Customization columns: `username`, `bio`, `custom_avatar_url`, `banner_url`. |
-| `scores` | One row per game played. `game_type` ∈ `guess-second`, `guess-clip`, `music-quiz`, `lyric-song`. |
+| `profiles` | Extends `auth.users`, auto-created on signup via trigger. Customization columns: `username`, `bio`, `custom_avatar_url`, `banner_url`, `country` (ISO alpha-2, for the Listening Map). |
+| `scores` | One row per game played. `game_type` ∈ `guess-second` (Name That Song, 5s audio), `higher-lower`, `music-quiz`, `lyric-song`. |
 | `daily_content` | One row per date. Queried by today's ISO date string. |
 | `favorite_artists` | User's favourite artists (`artist_id`, `artist_name`, `artist_image`). Public-read so the artist page can list "fans". |
 | `favorite_songs` | User's favourite songs (`track_id`, `name`, `artists`, `album_art`, `artist_ids text[]`). Public-read. `artist_ids` powers "Loved by MusicFreak" counts on artist pages. |
 | `play_history` | One row per Spotify play, accumulated by us (Spotify gives no play counts). Columns: `track_id, name, artists, artist_id, album_id, album_name, album_art, duration_ms, played_at`. `unique (user_id, played_at)` is the dedup key. RLS owner-only. |
-| `leaderboard` | View — `profiles` LEFT JOIN `scores`, ordered by `total_points desc`. Exposes `id, username, total_points` (avatars are joined separately from `profiles`). |
+| `leaderboard` | View — `profiles` LEFT JOIN `scores`, ordered by `total_points desc`. Exposes `id, username, total_points, games_played` (avatars are joined separately from `profiles`). |
 
-**`play_history` aggregation RPCs** (all `security invoker`, so RLS scopes them to `auth.uid()`; all take an optional `p_since timestamptz`): `get_play_counts` (per-track counts), `get_top_artists` (per `artist_id`, with `total_ms` for minutes-listened), `get_top_albums` (per `album_id`), `get_play_days(p_tz)` (distinct days → streaks), `get_play_hours(p_tz)` (hour-of-day histogram). The SQL is **not in the repo** — it's applied manually in the Supabase SQL editor. `get_top_artists`/`get_top_albums`/minutes only reflect plays ingested after the `artist_id`/`album_*`/`duration_ms` columns were added (older rows have them null).
+**`play_history` aggregation RPCs** (all `security invoker`, so RLS scopes them to `auth.uid()`; the `get_play_counts`/`get_top_*` ones take an optional `p_since timestamptz`): `get_play_counts` (per-track counts), `get_top_artists` (per `artist_id`, with `total_ms` for minutes-listened), `get_top_albums` (per `album_id`), `get_play_days(p_tz)` (distinct days → streaks), `get_play_hours(p_tz)` (hour-of-day histogram), `get_listening_minutes()` (sums `duration_ms` over day/week/month/year/all + `first_play` for the `/app/stats` "Listening time" cards, whose week/month/year tiles unlock once `now - first_play` exceeds 7/30/365 days). The SQL is **not in the repo** — it's applied manually in the Supabase SQL editor. `get_top_artists`/`get_top_albums`/minutes only reflect plays ingested after the `artist_id`/`album_*`/`duration_ms` columns were added (older rows have them null).
+
+**Cross-user `security definer` RPCs** (needed because `scores`/`play_history` are owner-only under RLS, so reading across users requires `definer`; all `set search_path = public`): `get_name_song_leaderboard(p_artist_id)` (per-artist Name That Song ranking by best points), `get_map_countries()` (top artist per country by minutes + per-country totals/listener counts), `get_country_top_artists(p_country)` and `get_country_top_listeners(p_country)` (map detail panel). Like the rest, the SQL lives only in the Supabase editor, not the repo.
 
 All tables have RLS. Owner-write policies use `auth.uid() = user_id`; `favorite_*` add a `using (true)` SELECT policy for public read.
 

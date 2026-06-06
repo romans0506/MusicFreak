@@ -3,8 +3,12 @@
 import { useState, useRef, useTransition, useEffect } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
-import { ArrowLeft, Heart, Play, Pause, Music2, Users, Loader2 } from "lucide-react"
+import { ArrowLeft, Heart, Play, Pause, Music2, Users, Loader2, Trophy, Gamepad2, Globe } from "lucide-react"
+import countries from "i18n-iso-countries"
+import enLocale from "i18n-iso-countries/langs/en.json"
 import { cn } from "@/lib/utils"
+
+countries.registerLocale(enLocale)
 
 type SpotifyTrack = {
   id: string
@@ -39,12 +43,22 @@ type LovedSong = {
   count: number
 }
 
+type GameLeader = {
+  user_id: string
+  username: string | null
+  avatar_url: string | null
+  points: number
+}
+
 type Props = {
   artist: SpotifyArtist
   artistId: string
   fans: Fan[]
   isFavorited: boolean
   lovedSongs: LovedSong[]
+  gameLeaders: GameLeader[]
+  currentUserId: string | null
+  topCountries: { country: string; listeners: number }[]
   toggleFavorite: (
     artistId: string,
     artistName: string,
@@ -65,7 +79,7 @@ function formatFollowers(n: number) {
 }
 
 
-export default function ArtistDetail({ artist, artistId, fans, isFavorited, lovedSongs, toggleFavorite }: Props) {
+export default function ArtistDetail({ artist, artistId, fans, isFavorited, lovedSongs, gameLeaders, currentUserId, topCountries, toggleFavorite }: Props) {
   const [favorited, setFavorited] = useState(isFavorited)
   const [fanCount, setFanCount] = useState(fans.length)
   const [playingId, setPlayingId] = useState<string | null>(null)
@@ -284,6 +298,88 @@ export default function ArtistDetail({ artist, artistId, fans, isFavorited, love
 
           {/* Right column */}
           <div className="flex flex-col gap-8">
+
+          {/* #1 on the Listening Map */}
+          {topCountries.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.15 }}
+            >
+              <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
+                <Globe className="size-4 text-primary" />
+                #1 Artist In
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {topCountries.map((c) => (
+                  <div
+                    key={c.country}
+                    title={`${c.listeners} listener${c.listeners === 1 ? "" : "s"}`}
+                    className="flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-sm"
+                  >
+                    <img
+                      src={`https://flagcdn.com/24x18/${c.country.toLowerCase()}.png`}
+                      srcSet={`https://flagcdn.com/48x36/${c.country.toLowerCase()}.png 2x`}
+                      alt=""
+                      width={20}
+                      height={15}
+                      className="rounded-[2px] object-cover"
+                    />
+                    <span className="font-medium">{countries.getName(c.country, "en") ?? c.country}</span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Name That Song leaderboard */}
+          {gameLeaders.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.18 }}
+            >
+              <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
+                <Gamepad2 className="size-4 text-primary" />
+                Name That Song · Top Players
+              </h2>
+              <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                {gameLeaders.slice(0, 10).map((l, i) => {
+                  const isMe = l.user_id === currentUserId
+                  const name = l.username ?? "Anonymous"
+                  return (
+                    <div
+                      key={l.user_id}
+                      className={cn(
+                        "flex items-center gap-3 px-4 py-2.5",
+                        i < Math.min(gameLeaders.length, 10) - 1 && "border-b border-border",
+                        isMe && "bg-primary/10"
+                      )}
+                    >
+                      <span className={cn("w-4 shrink-0 text-xs font-semibold tabular-nums", i === 0 ? "text-primary" : "text-muted-foreground")}>
+                        {i + 1}
+                      </span>
+                      {l.avatar_url ? (
+                        <img src={l.avatar_url} alt={name} className="size-8 shrink-0 rounded-full object-cover" />
+                      ) : (
+                        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                          {name[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {name}
+                        {isMe && <span className="ml-1 text-xs text-primary">(you)</span>}
+                      </span>
+                      <div className="flex shrink-0 items-center gap-1 text-xs text-primary">
+                        <Trophy className="size-3" />
+                        <span className="tabular-nums font-semibold">{l.points}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </motion.div>
+          )}
 
           {/* Loved songs */}
           {lovedSongs.length > 0 && (

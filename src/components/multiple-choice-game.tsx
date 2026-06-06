@@ -2,12 +2,44 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Music2, Trophy, RotateCcw, ChevronRight, Clock } from "lucide-react"
+import { Trophy, RotateCcw, ChevronRight, Clock, Brain, Mic2, Music2, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { Question } from "@/app/api/quiz/generate/route"
+
+// Server Components can't pass a component (function) to a Client Component,
+// so config carries an icon *key* and we map it here.
+const ICONS: Record<string, LucideIcon> = { brain: Brain, mic: Mic2, music: Music2 }
 
 const TOTAL_TIME = 15
 const MAX_POINTS_PER_Q = 150
+
+export type Question = {
+  id: string
+  question: string
+  /** Optional secondary line under the question (e.g. an artist hint). */
+  hint?: string | null
+  image: string | null
+  options: string[]
+  correctIndex: number
+}
+
+export type QuizConfig = {
+  /** Heading on the start/end screens. */
+  title: string
+  /** One-line description on the start screen. */
+  subtitle: string
+  /** scores.game_type value to persist. */
+  gameType: string
+  /** API route returning { questions: Question[] }. */
+  endpoint: string
+  /** Tailwind classes for the start-screen icon tile (bg + text color). */
+  iconClass: string
+  /** Icon key (mapped to a component in ICONS) — a function can't cross the server→client boundary. */
+  icon: keyof typeof ICONS
+  /** Lines shown in the start-screen rules list. */
+  rules?: string[]
+  /** Message under the error screen. */
+  errorHint?: string
+}
 
 type GameState = "start" | "loading" | "error" | "question" | "answer" | "end"
 
@@ -16,14 +48,14 @@ type AnswerRecord = {
   chosen: number | null
   correct: boolean
   points: number
-  timeLeft: number
 }
 
 function calcPoints(timeLeft: number) {
   return Math.round(MAX_POINTS_PER_Q * (timeLeft / TOTAL_TIME))
 }
 
-export default function MusicQuizGame({ userId }: { userId: string }) {
+export default function MultipleChoiceGame({ config }: { config: QuizConfig }) {
+  const Icon = ICONS[config.icon] ?? Music2
   const [state, setState] = useState<GameState>("start")
   const [questions, setQuestions] = useState<Question[]>([])
   const [current, setCurrent] = useState(0)
@@ -47,7 +79,7 @@ export default function MusicQuizGame({ userId }: { userId: string }) {
       const pts = correct ? calcPoints(remaining) : 0
       setChosen(chosenIndex)
       setState("answer")
-      setAnswers((prev) => [...prev, { question: q, chosen: chosenIndex, correct, points: pts, timeLeft: remaining }])
+      setAnswers((prev) => [...prev, { question: q, chosen: chosenIndex, correct, points: pts }])
 
       setTimeout(() => {
         if (current + 1 >= questions.length) {
@@ -84,31 +116,34 @@ export default function MusicQuizGame({ userId }: { userId: string }) {
     setTimeLeft(TOTAL_TIME)
     setChosen(null)
 
-    const res = await fetch("/api/quiz/generate")
-    const data = await res.json()
-
-    if (!res.ok || !data.questions?.length) {
+    try {
+      const res = await fetch(config.endpoint)
+      const data = await res.json()
+      if (!res.ok || !data.questions?.length) {
+        setState("error")
+        return
+      }
+      setQuestions(data.questions)
+      setState("question")
+    } catch {
       setState("error")
-      return
     }
-
-    setQuestions(data.questions)
-    setState("question")
   }
 
-  async function saveScore() {
+  const saveScore = useCallback(async () => {
     if (saving) return
     setSaving(true)
     await fetch("/api/scores", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ game_type: "music-quiz", points: totalPoints }),
+      body: JSON.stringify({ game_type: config.gameType, points: totalPoints }),
     })
     setSaving(false)
-  }
+  }, [saving, totalPoints, config.gameType])
 
   useEffect(() => {
     if (state === "end") saveScore()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
   if (state === "start") {
@@ -118,23 +153,25 @@ export default function MusicQuizGame({ userId }: { userId: string }) {
         animate={{ opacity: 1, y: 0 }}
         className="flex flex-col items-center gap-8 py-12 text-center"
       >
-        <div className="flex size-20 items-center justify-center rounded-3xl bg-blue-500/15">
-          <Music2 className="size-10 text-blue-400" />
+        <div className={cn("flex size-20 items-center justify-center rounded-3xl", config.iconClass)}>
+          <Icon className="size-10" />
         </div>
         <div>
-          <h1 className="text-3xl font-bold">Music Quiz</h1>
-          <p className="mt-2 text-muted-foreground">10 questions based on your Spotify taste</p>
+          <h1 className="text-3xl font-bold">{config.title}</h1>
+          <p className="mt-2 text-muted-foreground">{config.subtitle}</p>
         </div>
-        <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-          <p>⏱ 15 seconds per question</p>
-          <p>⚡ Faster answers = more points</p>
-          <p>🏆 Max {10 * MAX_POINTS_PER_Q} points</p>
-        </div>
+        {config.rules && config.rules.length > 0 && (
+          <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+            {config.rules.map((r) => (
+              <p key={r}>{r}</p>
+            ))}
+          </div>
+        )}
         <button
           onClick={startGame}
           className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-base font-semibold text-primary-foreground transition-all hover:bg-primary/80 hover:scale-105"
         >
-          Start Quiz <ChevronRight className="size-5" />
+          Start <ChevronRight className="size-5" />
         </button>
       </motion.div>
     )
@@ -144,7 +181,7 @@ export default function MusicQuizGame({ userId }: { userId: string }) {
     return (
       <div className="flex flex-col items-center gap-4 py-24">
         <div className="size-10 animate-spin rounded-full border-4 border-border border-t-primary" />
-        <p className="text-muted-foreground">Generating your quiz…</p>
+        <p className="text-muted-foreground">Loading…</p>
       </div>
     )
   }
@@ -152,17 +189,21 @@ export default function MusicQuizGame({ userId }: { userId: string }) {
   if (state === "error") {
     return (
       <div className="flex flex-col items-center gap-4 py-24 text-center">
-        <Music2 className="size-10 text-muted-foreground/40" />
-        <p className="font-medium">Couldn't generate quiz</p>
-        <p className="text-sm text-muted-foreground">Listen to more music on Spotify to unlock this game.</p>
-        <button onClick={() => setState("start")} className="mt-2 text-sm text-primary hover:underline">Try again</button>
+        <Icon className="size-10 text-muted-foreground/40" />
+        <p className="font-medium">Couldn&apos;t start this game</p>
+        <p className="text-sm text-muted-foreground">
+          {config.errorHint ?? "Listen to more music on Spotify to unlock this game."}
+        </p>
+        <button onClick={() => setState("start")} className="mt-2 text-sm text-primary hover:underline">
+          Try again
+        </button>
       </div>
     )
   }
 
   if (state === "end") {
     const correct = answers.filter((a) => a.correct).length
-    const percent = Math.round((correct / questions.length) * 100)
+    const percent = questions.length ? Math.round((correct / questions.length) * 100) : 0
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
@@ -212,7 +253,7 @@ export default function MusicQuizGame({ userId }: { userId: string }) {
         <div className="flex-1 overflow-hidden rounded-full bg-muted h-1.5">
           <motion.div
             className="h-full rounded-full bg-primary"
-            animate={{ width: `${((current) / questions.length) * 100}%` }}
+            animate={{ width: `${(current / questions.length) * 100}%` }}
             transition={{ duration: 0.3 }}
           />
         </div>
@@ -243,13 +284,10 @@ export default function MusicQuizGame({ userId }: { userId: string }) {
           {/* Question card */}
           <div className="mb-6 flex flex-col items-center gap-4 rounded-2xl border border-border bg-card p-6 text-center">
             {q.image && (
-              <img
-                src={q.image}
-                alt=""
-                className="size-24 rounded-xl object-cover shadow-lg"
-              />
+              <img src={q.image} alt="" className="size-24 rounded-xl object-cover shadow-lg" />
             )}
             <p className="text-xl font-semibold leading-snug">{q.question}</p>
+            {q.hint && <p className="text-sm text-muted-foreground">{q.hint}</p>}
           </div>
 
           {/* Options */}
@@ -273,10 +311,7 @@ export default function MusicQuizGame({ userId }: { userId: string }) {
                   whileTap={!isAnswered ? { scale: 0.98 } : {}}
                   disabled={isAnswered}
                   onClick={() => goToAnswer(i, timeLeft)}
-                  className={cn(
-                    "rounded-xl border px-4 py-4 text-left text-sm font-medium transition-all",
-                    style
-                  )}
+                  className={cn("rounded-xl border px-4 py-4 text-left text-sm font-medium transition-all", style)}
                 >
                   {option}
                 </motion.button>

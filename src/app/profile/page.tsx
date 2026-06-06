@@ -25,7 +25,7 @@ export default async function ProfilePage() {
       .order("added_at", { ascending: false }),
     supabase
       .from("profiles")
-      .select("username, bio, custom_avatar_url, banner_url")
+      .select("username, bio, custom_avatar_url, banner_url, country")
       .eq("id", user.id)
       .single(),
     supabase
@@ -33,7 +33,11 @@ export default async function ProfilePage() {
       .limit(5),
   ])
 
-  const totalPoints = scores?.reduce((sum, s) => sum + s.points, 0) ?? 0
+  // Use the same aggregated totals the leaderboard shows (full history),
+  // not just the last 10 scores fetched above for the activity list.
+  const myRow = leaderboard?.find((r) => r.id === user.id)
+  const totalPoints = myRow?.total_points ?? (scores?.reduce((sum, s) => sum + s.points, 0) ?? 0)
+  const gamesPlayed = myRow?.games_played ?? (scores?.length ?? 0)
   const rank = leaderboard
     ? leaderboard.findIndex((r) => r.id === user.id) + 1
     : null
@@ -43,7 +47,7 @@ export default async function ProfilePage() {
       user={user}
       scores={scores ?? []}
       totalPoints={totalPoints}
-      gamesPlayed={scores?.length ?? 0}
+      gamesPlayed={gamesPlayed}
       rank={rank || null}
       favoriteSongs={favoriteSongs ?? []}
       profile={profile ?? null}

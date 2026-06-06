@@ -11,6 +11,7 @@ const TABS = [
   { label: "Games", href: "/app" },
   { label: "Leaderboard", href: "/app/leaderboard" },
   { label: "Artists", href: "/app/artists" },
+  { label: "Map", href: "/app/map" },
   { label: "Stats", href: "/app/stats" },
 ]
 

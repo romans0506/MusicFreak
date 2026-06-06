@@ -183,3 +183,36 @@ export async function getSpotifyAppToken(): Promise<string | null> {
     inflightAppToken = null
   }
 }
+
+/**
+ * Fetch artist name + image by id via the app token (catalog).
+ * Uses the single-artist endpoint `/v1/artists/{id}` per id — the batch
+ * `/v1/artists?ids=` endpoint returns 403 for this app (Spotify restriction),
+ * while the single one works. Returns a Map keyed by artist id; empty on
+ * cool-down / failure.
+ */
+export async function fetchSpotifyArtists(
+  ids: string[]
+): Promise<Map<string, { name: string; image: string | null }>> {
+  const out = new Map<string, { name: string; image: string | null }>()
+  const unique = [...new Set(ids.filter(Boolean))]
+  if (unique.length === 0) return out
+
+  const token = await getSpotifyAppToken()
+  if (!token) return out
+
+  const headers = { Authorization: `Bearer ${token}` }
+  await Promise.all(
+    unique.map(async (id) => {
+      const res = await fetch(`https://api.spotify.com/v1/artists/${id}`, { headers, cache: "no-store" })
+      if (res.status === 429) {
+        noteSpotify429(res.headers.get("retry-after"))
+        return
+      }
+      if (!res.ok) return
+      const a = await res.json()
+      if (a?.id) out.set(a.id, { name: a.name, image: a.images?.[0]?.url ?? null })
+    })
+  )
+  return out
+}
