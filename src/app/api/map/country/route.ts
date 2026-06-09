@@ -10,7 +10,9 @@ type ListenerRow = { user_id: string; username: string | null; avatar_url: strin
 
 export async function GET(req: NextRequest) {
   const cc = new URL(req.url).searchParams.get("cc")
-  if (!cc) return NextResponse.json({ error: "missing_country" }, { status: 400 })
+  if (!cc || !/^[A-Za-z]{2}$/.test(cc)) {
+    return NextResponse.json({ error: "missing_country" }, { status: 400 })
+  }
 
   const limit = rateLimit(`mapcc:${callerKey(req)}`, 30, 60_000)
   if (!limit.allowed) {

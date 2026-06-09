@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { getSpotifyAppToken, noteSpotify429, spotifyCooldown, spotifyUserFetch, resolveSpotifyUserToken } from "@/lib/spotify"
+import { getSpotifyAppToken, noteSpotify429, spotifyCooldown, spotifyUserFetch, resolveSpotifyUserToken, isSpotifyId } from "@/lib/spotify"
 import { rateLimit, callerKey } from "@/lib/rate-limit"
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const artistId = searchParams.get("artistId")
-  if (!artistId) return NextResponse.json({ error: "missing_artist_id" }, { status: 400 })
+  if (!isSpotifyId(artistId)) return NextResponse.json({ error: "missing_artist_id" }, { status: 400 })
 
   // Our own rate limit: this route fans out into many Spotify calls,
   // so keep it tight — max 6 / 10s per caller.
@@ -17,6 +17,12 @@ export async function GET(req: NextRequest) {
       { status: 429, headers: { "Retry-After": String(limit.retryAfter) } }
     )
   }
+
+  // Auth gate BEFORE any Spotify call — otherwise this route is an
+  // unauthenticated amplifier (1 request → up to 13 Spotify calls).
+  const supabase = await createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return NextResponse.json({ error: "no_token" }, { status: 401 })
 
   // Try full discography via app token
   const appToken = await getSpotifyAppToken()
@@ -76,10 +82,6 @@ export async function GET(req: NextRequest) {
   }
 
   // Fallback: user's listening history
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return NextResponse.json({ error: "no_token" }, { status: 401 })
-
   // If a 429 above tripped the cool-down, don't keep hammering with the fallback.
   if (spotifyCooldown() > 0) return NextResponse.json({ tracks: [], rateLimited: true })
 

@@ -5,6 +5,15 @@
 
 let cachedToken: { value: string; expiresAt: number } | null = null
 
+/**
+ * Spotify IDs are base62. Validate before interpolating into an API URL path —
+ * an unchecked id like "../me/player" would let a caller steer our app token
+ * to arbitrary Spotify endpoints.
+ */
+export function isSpotifyId(id: unknown): id is string {
+  return typeof id === "string" && /^[0-9A-Za-z]{10,40}$/.test(id)
+}
+
 // When Spotify returns 429, back off entirely until this timestamp.
 // Hammering during a rate-limit window only makes it worse (and can break login).
 let rateLimitedUntil = 0
@@ -195,7 +204,7 @@ export async function fetchSpotifyArtists(
   ids: string[]
 ): Promise<Map<string, { name: string; image: string | null }>> {
   const out = new Map<string, { name: string; image: string | null }>()
-  const unique = [...new Set(ids.filter(Boolean))]
+  const unique = [...new Set(ids.filter(isSpotifyId))]
   if (unique.length === 0) return out
 
   const token = await getSpotifyAppToken()

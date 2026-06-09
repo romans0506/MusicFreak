@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { rateLimit, callerKey } from "@/lib/rate-limit"
-import { spotifyUserFetch, spotifyCooldown, resolveSpotifyUserToken } from "@/lib/spotify"
+import { spotifyUserFetch, spotifyCooldown, resolveSpotifyUserToken, isSpotifyId } from "@/lib/spotify"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const artistId = searchParams.get("artistId")
-  if (!artistId) return NextResponse.json({ error: "Missing artistId" }, { status: 400 })
+  if (!isSpotifyId(artistId)) return NextResponse.json({ error: "Missing artistId" }, { status: 400 })
 
   const limit = rateLimit(`artist-tracks:${callerKey(request)}`, 15, 10_000)
   if (!limit.allowed) {

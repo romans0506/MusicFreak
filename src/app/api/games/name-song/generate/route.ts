@@ -90,7 +90,7 @@ async function songsForArtist(artistId: number, artistName: string): Promise<Can
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const artistName = (searchParams.get("artistName") ?? "").trim()
+  const artistName = (searchParams.get("artistName") ?? "").trim().slice(0, 100)
   if (!artistName) return NextResponse.json({ error: "missing_artist" }, { status: 400 })
 
   const limit = rateLimit(`namesong:${callerKey(req)}`, 8, 30_000)

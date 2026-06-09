@@ -7,7 +7,10 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code")
   const errorParam = searchParams.get("error")
   const errorDescription = searchParams.get("error_description")
-  const next = searchParams.get("next") ?? "/"
+  // Only allow same-origin relative paths — "//evil.com" or absolute URLs
+  // here would be an open redirect.
+  const rawNext = searchParams.get("next") ?? "/"
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/"
 
   if (errorParam) {
     console.error("Auth callback error:", errorParam, errorDescription)

@@ -29,7 +29,7 @@ There is no test suite yet. Verify changes with `npx tsc --noEmit`.
 
 **Data flow pattern:** Server Components (`page.tsx`) fetch from Supabase + Spotify and pass typed props down to Client Components (animation, interactivity). Client Components are marked `"use client"` and use Framer Motion.
 
-**Auth:** Supabase Auth with Spotify OAuth. `nextauth` is in `package.json` but **not used** — all auth goes through `@supabase/ssr`. Flow: `SignInButton` → Supabase OAuth → Spotify → `https://<project>.supabase.co/auth/v1/callback` → `src/app/auth/callback/route.ts` → session set → redirect (authenticated users land on `/app`).
+**Auth:** Supabase Auth with Spotify OAuth — all auth goes through `@supabase/ssr`. Flow: `SignInButton` → Supabase OAuth → Spotify → `https://<project>.supabase.co/auth/v1/callback` → `src/app/auth/callback/route.ts` → session set → redirect (authenticated users land on `/app`).
 
 **Hydration:** Auth-dependent UI uses a `mounted` flag (`useState(false)`, set in `useEffect`) to avoid SSR/client mismatch. Never render auth state during SSR. `<body>` has `suppressHydrationWarning` (browser extensions like Grammarly inject attributes).
 
@@ -40,7 +40,7 @@ This is the most error-prone area. Spotify deprecated many catalog endpoints (No
 | Token | Source | Use for |
 |---|---|---|
 | **User token** | `resolveSpotifyUserToken(session)` in `src/lib/spotify.ts` | personal data — `/v1/me/...` only (top tracks/artists, now-playing, recently-played). |
-| **App token** (Client Credentials) | `getSpotifyAppToken()` in `src/lib/spotify.ts` | catalog — `/v1/search`, `/v1/artists/{id}/albums`, `/v1/artists?ids=`. |
+| **App token** (Client Credentials) | `getSpotifyAppToken()` in `src/lib/spotify.ts` | catalog — `/v1/search`, `/v1/artists/{id}`, `/v1/artists/{id}/albums`. |
 
 **Never read `session.provider_token` directly.** It expires after ~1h and is dropped on Supabase session refresh (this was the cause of recurring 401s/login failures). Always go through `resolveSpotifyUserToken(session)`, which mints a fresh user token from `session.provider_refresh_token` (cached until expiry) and falls back to `provider_token`. Token minting is **de-duplicated by an in-flight promise** (both user-refresh and app-token paths) — concurrent callers share one request, since racing `/api/token` calls themselves trigger 429s.
 
@@ -48,7 +48,8 @@ This is the most error-prone area. Spotify deprecated many catalog endpoints (No
 - `/v1/me/...` with the user token is the only reliable source of personal listening data.
 - `GET /v1/artists/{id}/top-tracks` is **deprecated** (403). Artist "top tracks" are instead derived by fetching `/v1/me/top/tracks` across `short_term`/`medium_term`/`long_term` and filtering by `artistId`.
 - Catalog endpoints (search, albums) **require the app token** — they 400/403 with a user token.
-- `preview_url` is now `null` on most tracks. UI must fall back (e.g. open the track on Spotify) rather than assume a 30s preview exists.
+- This app is **development-mode**, which strips/limits several catalog endpoints (discovered live): the **batch** `GET /v1/artists?ids=` returns **403** (use single `GET /v1/artists/{id}` instead — `fetchSpotifyArtists()` does), and `/v1/search` rejects `limit > 10` ("Invalid limit") and returns artist objects **without `followers`/`popularity`** (only id/name/images) — those metrics are only on the single-artist endpoint.
+- `preview_url` is now `null` on most tracks. UI must fall back (e.g. open the track on Spotify) rather than assume a 30s preview exists. The **iTunes Search API** is the audio workaround (see Games).
 
 **Proxy-route pattern:** Client Components never call Spotify directly — the browser's `provider_token` becomes unreliable after a Supabase session refresh. Instead they call our own route handlers under `src/app/api/spotify/*`, which resolve the token server-side. User-token routes: `artist-tracks`, `top-stats`, `currently-playing`, `recently-played`, `ingest-plays`. App-token routes: `search`, `artist-discography` (with a user-history fallback). All user-token fetches go through `spotifyUserFetch()` (`src/lib/spotify.ts`), which honours the global cool-down and feeds a 429 back into it — a 429 on a `/v1/me/...` call shares the `client_id` and can break login just like an app-token 429, so user-token routes must trip the cool-down too (they previously swallowed 429s silently).
 
@@ -78,12 +79,13 @@ Consumers of the aggregation RPCs: `/app/stats` (`StatsView` — streaks/badges 
 
 Each game lives at `/app/games/<slug>` with a server `page.tsx` (auth gate) that renders a client game component. Generators are route handlers under `src/app/api/games/<slug>/generate` (rate-limited via `src/lib/rate-limit.ts`, and they respect `spotifyCooldown()`). All games persist a final score via `POST /api/scores` (`{ game_type, points }`).
 
-- **Music Quiz** (`music-quiz`) & **Lyric → Song** (`lyric-song`) share one UI: `src/components/multiple-choice-game.tsx` (`MultipleChoiceGame`), driven by a `QuizConfig` (title, endpoint, gameType, icon, rules). A generator returns `{ questions: Question[] }` where `Question = { id, question, hint?, image, options, correctIndex }`. To add another multiple-choice game, write a generator returning that shape and point a page at `MultipleChoiceGame` — don't fork the component.
-- **Higher or Lower** (`higher-lower`) and **Name That Song** (`guess-second`) have bespoke components (`higher-lower-game.tsx`, `name-song-game.tsx`) because their UX differs (streak cards / audio player).
+- **Music Quiz** (`music-quiz`) & **Lyric → Song** (`lyric-song`) share one UI: `src/components/multiple-choice-game.tsx` (`MultipleChoiceGame`), driven by a `QuizConfig` (title, endpoint, gameType, icon, rules). A generator returns `{ questions: Question[] }` where `Question = { id, question, hint?, image, options, correctIndex }`. To add another multiple-choice game, write a generator returning that shape and point a page at `MultipleChoiceGame` — don't fork the component. **Gotcha:** the page is a Server Component and `QuizConfig.icon` is therefore a **string key** (mapped to a lucide component inside `MultipleChoiceGame` via `ICONS`), not a component — you can't pass a function/component across the server→client boundary (causes a 500).
+- **Name That Song** (`guess-second`, `name-song-game.tsx`): pick an artist → guess the song from a 5-second clip. Sources **both the song list and the audio from iTunes** (`itunes.apple.com/search?...&entity=musicArtist` → `lookup?id=&entity=song`), NOT Spotify — so the clip always matches the label and you get the artist's whole catalog. Per-artist leaderboard via `get_name_song_leaderboard` (end screen + artist page). Scores attach `artist_id`/`artist_name`/`artist_image` to the `scores` row.
+- **Higher or Lower** (`higher-lower`, `higher-lower-game.tsx`): endless survival on follower counts of a **fixed pool of famous artists** (`src/lib/higher-lower-artists.ts`) — NOT the user's own artists. **Currently paused** (card `available: false` in `games-grid.tsx`): the static pool needs real follower numbers, which require ~200 single-artist calls that keep tripping Spotify's 429. See the `higher-lower-game-pending` memory for how to finish.
 
 **External no-key APIs** (because Spotify can't provide these):
 - **Lyrics** → `lrclib.net` (`/api/search?track_name=&artist_name=`), free, no auth. Send a `User-Agent`. Used by `lyric-song` to build snippets from the user's top tracks; it skips lines containing the title/artist so the answer isn't given away.
-- **Audio previews** → `itunes.apple.com/search?term=&entity=song` (30s `previewUrl`, free, no auth). This is the **workaround for Spotify's null `preview_url`** — `name-song` plays the first 5s of the iTunes preview. Track *lists* still come from Spotify catalog (app token, albums→tracks) with a user-history fallback.
+- **Audio previews + catalog** → `itunes.apple.com` (free, no auth). `name-song` uses iTunes for the artist's song list *and* the 30s `previewUrl` (plays the first 5s) — the workaround for Spotify's null `preview_url` and restricted catalog.
 
 `name-song` reuses `guess-second` as its `game_type`. **Adding a new game_type requires updating the `scores.game_type` CHECK constraint in Supabase** (SQL not in repo — applied manually). Score labels/icons for the profile activity feed live in `GAME_META` in `src/components/profile-view.tsx`; the playable cards live in `games-grid.tsx` (in-app) and `games-preview.tsx` (landing).
 
@@ -91,7 +93,7 @@ Each game lives at `/app/games/<slug>` with a server `page.tsx` (auth gate) that
 
 `/app/map` paints a world map where each country is filled with its #1 artist (by minutes listened) across **all** MusicFreak users. Built without `react-simple-maps` (its peer-deps cap at React 18; this project is on React 19) — instead: **d3-geo** (`geoEqualEarth` projection + `geoPath`) + **topojson-client** (`feature()`) render plain SVG `<path>`s in the client `WorldMap` component, and **i18n-iso-countries** maps the topojson's numeric ISO ids ↔ alpha-2 codes. The world topology is a static asset at `public/world-110m.json` (world-atlas `countries-110m`). Each data country is filled via an SVG `<clipPath>` + `<image>` (artist photo); click → detail panel (top artists + top listeners + minutes).
 
-`play_history` has **no artist image**, so the map/detail routes resolve artist photos at request time via `fetchSpotifyArtists(ids)` in `src/lib/spotify.ts` (app token, batched `/v1/artists?ids=`).
+`play_history` has **no artist image**, so the map/detail routes resolve artist photos at request time via `fetchSpotifyArtists(ids)` in `src/lib/spotify.ts` (app token, one `GET /v1/artists/{id}` per id in parallel — the batch `?ids=` endpoint is 403 for this app).
 
 **Country source:** `profiles.country` (ISO alpha-2). Auto-detected from Spotify `/v1/me` `country` on first map load (requires the `user-read-private` scope on the Supabase Spotify provider) and upserted; users can also set it manually via the profile editor (`country` `<select>` in `edit-profile.tsx` → `updateProfile`).
 
@@ -133,6 +135,8 @@ shadcn style `base-nova` — primitives come from `@base-ui/react/*`, **not** Ra
 **Styling:** Tailwind CSS v4. Use `@import "tailwindcss"` — the old `@tailwind` directives do not exist. Design tokens are CSS custom properties in `src/app/globals.css` using oklch. Dark by default (`:root` is dark). Primary accent is **dark crimson** `oklch(0.50 0.22 18)` with light `--primary-foreground` (deliberately moved off Spotify green to feel less tied to Spotify).
 
 **Animated links:** use `const MotionLink = motion(Link)` to animate a Next.js `Link` with Framer Motion.
+
+**Country flags:** don't use emoji flags (regional-indicator letters) — **Windows renders them as the two-letter code, not a flag**. Use flag images from `flagcdn.com` (e.g. `https://flagcdn.com/24x18/{cc}.png`, lowercase ISO alpha-2), as the artist page "#1 Artist In" chips do.
 
 **Background motif:** the red blurred-blob gradient (two `bg-primary` circles with `blur-3xl`) is reused across the landing hero, `/app` layout, and profile for visual consistency.
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { createClient } from "@/lib/supabase/server"
 import { getSpotifyAppToken, spotifyCooldown, noteSpotify429 } from "@/lib/spotify"
 import { rateLimit, callerKey } from "@/lib/rate-limit"
 
@@ -9,8 +10,11 @@ const CACHE_TTL = 60_000 // 60s
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url)
-  const q = url.searchParams.get("q")
+  const q = url.searchParams.get("q")?.slice(0, 100)
   const type = url.searchParams.get("type") ?? "track"
+  if (type !== "track" && type !== "artist") {
+    return NextResponse.json({ error: "invalid_type" }, { status: 400 })
+  }
   if (!q || q.trim().length < 2) return NextResponse.json({ tracks: [], artists: [] })
 
   // Our own rate limit: max 20 searches / 10s per caller.
@@ -21,6 +25,11 @@ export async function GET(req: NextRequest) {
       { status: 429, headers: { "Retry-After": String(limit.retryAfter) } }
     )
   }
+
+  // Don't be an open Spotify proxy — only signed-in users may search.
+  const supabase = await createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return NextResponse.json({ tracks: [], artists: [] }, { status: 401 })
 
   const cacheKey = `${type}:${q.trim().toLowerCase()}`
   const cached = searchCache.get(cacheKey)
