@@ -9,7 +9,7 @@ type PickArtist = { id: string; name: string; image: string | null }
 type Option = { name: string; albumArt: string | null }
 type Round = { id: string; previewUrl: string; options: Option[]; correctIndex: number }
 type Leader = { user_id: string; username: string | null; avatar_url: string | null; points: number }
-type GameState = "pick" | "loading" | "round" | "reveal" | "end" | "error"
+type GameState = "pick" | "countdown" | "loading" | "round" | "reveal" | "end" | "error"
 
 const WINDOW = 12
 const MAX_POINTS = 150
@@ -48,6 +48,11 @@ export default function NameSongGame({ userId }: { userId: string }) {
   const [gain, setGain] = useState<{ amount: number; key: number } | null>(null)
   const [correctCount, setCorrectCount] = useState(0)
   const [saving, setSaving] = useState(false)
+
+  // "Get ready" 3-2-1 between picking an artist and the first round; rounds
+  // load in the background during it. `fetched` carries the generate result.
+  const [readyCount, setReadyCount] = useState(3)
+  const [fetched, setFetched] = useState<Round[] | "error" | null>(null)
 
   // Picker data
   const [topArtists, setTopArtists] = useState<PickArtist[]>([])
@@ -186,26 +191,56 @@ export default function NameSongGame({ userId }: { userId: string }) {
 
   async function startGame(a: PickArtist) {
     setArtist(a)
-    setState("loading")
     setCurrent(0)
     setChosen(null)
     setTimeLeft(WINDOW)
     setPoints(0)
     setGain(null)
     setCorrectCount(0)
+    setFetched(null)
+    setReadyCount(3)
+    setState("countdown")
+
+    // Fetch rounds while the 3-2-1 plays so the wait feels intentional, not
+    // like dead loading time. The countdown effects below pick this up.
     try {
       const res = await fetch(`/api/games/name-song/generate?artistId=${a.id}&artistName=${encodeURIComponent(a.name)}`)
       const data = await res.json()
-      if (!res.ok || !data.rounds?.length) {
-        setState("error")
-        return
-      }
-      setRounds(data.rounds)
-      setState("round")
+      setFetched(res.ok && data.rounds?.length ? (data.rounds as Round[]) : "error")
     } catch {
-      setState("error")
+      setFetched("error")
     }
   }
+
+  // Tick the get-ready countdown 3 → 0.
+  useEffect(() => {
+    if (state !== "countdown" || readyCount <= 0) return
+    const t = setTimeout(() => setReadyCount((c) => Math.max(0, c - 1)), 1000)
+    return () => clearTimeout(t)
+  }, [state, readyCount])
+
+  // Countdown finished: start the round, show the error, or — if rounds aren't
+  // back yet — fall through to a spinner.
+  useEffect(() => {
+    if (state !== "countdown" || readyCount > 0) return
+    if (fetched === "error") setState("error")
+    else if (Array.isArray(fetched)) {
+      setRounds(fetched)
+      setState("round")
+    } else {
+      setState("loading")
+    }
+  }, [state, readyCount, fetched])
+
+  // Spinner fallback: rounds arrived after the countdown already ran out.
+  useEffect(() => {
+    if (state !== "loading") return
+    if (fetched === "error") setState("error")
+    else if (Array.isArray(fetched)) {
+      setRounds(fetched)
+      setState("round")
+    }
+  }, [state, fetched])
 
   const saveScore = useCallback(async () => {
     if (saving) return
@@ -297,6 +332,37 @@ export default function NameSongGame({ userId }: { userId: string }) {
             </p>
           )}
         </div>
+      </div>
+    )
+  }
+
+  if (state === "countdown") {
+    return (
+      <div className="flex flex-col items-center gap-6 py-16 text-center">
+        {audioEl}
+        <div className="size-40">
+          {artist?.image ? (
+            <img src={artist.image} alt={artist.name} className="size-full rounded-full object-cover shadow-lg ring-4 ring-primary/20" />
+          ) : (
+            <div className="flex size-full items-center justify-center rounded-full bg-muted text-5xl font-bold text-muted-foreground">
+              {artist?.name?.[0]?.toUpperCase()}
+            </div>
+          )}
+        </div>
+        <p className="text-lg font-semibold">{artist?.name}</p>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={readyCount}
+            initial={{ scale: 0.4, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 1.6, opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="text-7xl font-bold tabular-nums text-primary"
+          >
+            {readyCount > 0 ? readyCount : "Go!"}
+          </motion.div>
+        </AnimatePresence>
+        <p className="text-sm text-muted-foreground">Get ready…</p>
       </div>
     )
   }

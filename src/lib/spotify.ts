@@ -193,6 +193,53 @@ export async function getSpotifyAppToken(): Promise<string | null> {
   }
 }
 
+// Cache of artist photo URLs by lowercased name. The Music Quiz draws from a
+// fixed roster of artists, so a long TTL means we hit Spotify only on cold
+// start; afterwards it's all cache. Misses are cached briefly so we retry.
+const artistImageCache = new Map<string, { url: string | null; expiresAt: number }>()
+
+/**
+ * Resolve an artist's photo URL by name via the app token (catalog search).
+ * Cached aggressively (24h for hits, 60s for misses). Returns null on
+ * miss / cool-down / failure — callers should fall back to a placeholder.
+ */
+export async function getArtistImage(name: string): Promise<string | null> {
+  const key = name.trim().toLowerCase()
+  if (!key) return null
+
+  const cached = artistImageCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.url
+
+  if (spotifyCooldown() > 0) return cached?.url ?? null
+
+  const token = await getSpotifyAppToken()
+  if (!token) return cached?.url ?? null
+
+  try {
+    const params = new URLSearchParams({ q: name, type: "artist", limit: "5" })
+    const res = await fetch(`https://api.spotify.com/v1/search?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    })
+    if (res.status === 429) {
+      noteSpotify429(res.headers.get("retry-after"))
+      return cached?.url ?? null
+    }
+    if (!res.ok) return cached?.url ?? null
+
+    const data = await res.json()
+    const items: { name?: string; images?: { url?: string }[] }[] = data.artists?.items ?? []
+    // Prefer an exact (case-insensitive) name match, else the top result.
+    const hit = items.find((a) => (a.name ?? "").toLowerCase() === key) ?? items[0]
+    const url = hit?.images?.[0]?.url ?? null
+
+    artistImageCache.set(key, { url, expiresAt: Date.now() + (url ? 24 * 60 * 60_000 : 60_000) })
+    return url
+  } catch {
+    return cached?.url ?? null
+  }
+}
+
 /**
  * Fetch artist name + image by id via the app token (catalog).
  * Uses the single-artist endpoint `/v1/artists/{id}` per id — the batch

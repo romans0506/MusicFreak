@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Trophy, RotateCcw, ChevronRight, Clock, Brain, Mic2, Music2, type LucideIcon } from "lucide-react"
+import { Trophy, RotateCcw, ChevronRight, Brain, Mic2, Music2, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // Server Components can't pass a component (function) to a Client Component,
@@ -11,6 +11,41 @@ const ICONS: Record<string, LucideIcon> = { brain: Brain, mic: Mic2, music: Musi
 
 const TOTAL_TIME = 15
 const MAX_POINTS_PER_Q = 150
+
+/**
+ * Small circular countdown: the seconds-remaining digit inside, a ring around
+ * it that depletes each second. Under 5s it turns red and the whole dial
+ * blinks. Declared at module level (not inside render) so it keeps its identity.
+ */
+function CircleTimer({ timeLeft }: { timeLeft: number }) {
+  const danger = timeLeft <= 5
+  return (
+    <div className={cn("relative size-11 shrink-0", danger && "animate-pulse")}>
+      <svg className="size-full -rotate-90" viewBox="0 0 44 44">
+        <circle cx="22" cy="22" r="19" fill="none" strokeWidth="3" className="stroke-muted" />
+        <motion.circle
+          cx="22"
+          cy="22"
+          r="19"
+          fill="none"
+          strokeWidth="3"
+          strokeLinecap="round"
+          className={cn(danger ? "stroke-red-500" : "stroke-primary")}
+          animate={{ pathLength: Math.max(timeLeft / TOTAL_TIME, 0) }}
+          transition={{ duration: 0.9, ease: "linear" }}
+        />
+      </svg>
+      <span
+        className={cn(
+          "absolute inset-0 flex items-center justify-center text-sm font-semibold tabular-nums",
+          danger ? "text-red-400" : "text-foreground"
+        )}
+      >
+        {timeLeft}
+      </span>
+    </div>
+  )
+}
 
 export type Question = {
   id: string
@@ -39,6 +74,8 @@ export type QuizConfig = {
   rules?: string[]
   /** Message under the error screen. */
   errorHint?: string
+  /** When a question has no image, show a styled "?" tile instead of nothing. */
+  imagePlaceholder?: boolean
 }
 
 type GameState = "start" | "loading" | "error" | "question" | "answer" | "end"
@@ -151,38 +188,83 @@ export default function MultipleChoiceGame({ config }: { config: QuizConfig }) {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col items-center gap-8 py-12 text-center"
+        className="relative flex flex-col items-center gap-9 py-14 text-center"
       >
-        <div className={cn("flex size-20 items-center justify-center rounded-3xl", config.iconClass)}>
-          <Icon className="size-10" />
+        {/* Floating 3D icon: accent glow, glossy highlight, slow Y-axis turn. */}
+        <div className="relative [perspective:800px]">
+          <div className={cn("absolute inset-0 rounded-[2rem] opacity-70 blur-2xl", config.iconClass)} />
+          <motion.div
+            animate={{ y: [0, -9, 0], rotateY: [-14, 14, -14] }}
+            transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
+            style={{ transformStyle: "preserve-3d" }}
+            className={cn(
+              "relative flex size-28 items-center justify-center rounded-[2rem] shadow-2xl ring-1 ring-white/10",
+              config.iconClass
+            )}
+          >
+            {/* glossy top highlight */}
+            <span className="pointer-events-none absolute inset-x-3 top-2 h-1/3 rounded-full bg-white/30 blur-md" />
+            <Icon className="size-14 drop-shadow-[0_6px_8px_rgba(0,0,0,0.45)]" />
+          </motion.div>
         </div>
-        <div>
-          <h1 className="text-3xl font-bold">{config.title}</h1>
-          <p className="mt-2 text-muted-foreground">{config.subtitle}</p>
+
+        <div className="space-y-3">
+          <h1 className="text-5xl font-bold tracking-tight [font-family:var(--font-rounded)] sm:text-6xl">
+            {config.title}
+          </h1>
+          <p className="text-lg text-muted-foreground [font-family:var(--font-rounded)]">{config.subtitle}</p>
         </div>
+
         {config.rules && config.rules.length > 0 && (
-          <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-            {config.rules.map((r) => (
-              <p key={r}>{r}</p>
+          <div className="grid w-full max-w-md gap-3.5">
+            {config.rules.map((rule, i) => (
+              <motion.div
+                key={rule}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 + i * 0.1, type: "spring", stiffness: 260, damping: 22 }}
+                className="rounded-[1.75rem] bg-card/70 px-6 py-4 text-center text-lg font-medium backdrop-blur-sm [font-family:var(--font-rounded)]"
+              >
+                {rule}
+              </motion.div>
             ))}
           </div>
         )}
-        <button
+
+        <motion.button
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 + (config.rules?.length ?? 0) * 0.1 }}
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.97 }}
           onClick={startGame}
-          className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-base font-semibold text-primary-foreground transition-all hover:bg-primary/80 hover:scale-105"
+          className="group flex items-center gap-2 rounded-full bg-primary px-10 py-4 text-lg font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-colors [font-family:var(--font-rounded)] hover:bg-primary/90"
         >
-          Start <ChevronRight className="size-5" />
-        </button>
+          Start
+          <ChevronRight className="size-5 transition-transform group-hover:translate-x-1" />
+        </motion.button>
       </motion.div>
     )
   }
 
   if (state === "loading") {
     return (
-      <div className="flex flex-col items-center gap-4 py-24">
-        <div className="size-10 animate-spin rounded-full border-4 border-border border-t-primary" />
-        <p className="text-muted-foreground">Loading…</p>
-      </div>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex flex-col items-center gap-6 py-24 text-center"
+      >
+        <div className="relative flex size-20 items-center justify-center">
+          <div className="absolute inset-0 animate-spin rounded-full border-4 border-border border-t-primary" />
+          <div className={cn("flex size-14 items-center justify-center rounded-2xl", config.iconClass)}>
+            <Icon className="size-7" />
+          </div>
+        </div>
+        <div>
+          <p className="font-medium">Building your round…</p>
+          <p className="mt-1 text-sm text-muted-foreground">Fetching lyrics — this can take a few seconds</p>
+        </div>
+      </motion.div>
     )
   }
 
@@ -248,29 +330,17 @@ export default function MultipleChoiceGame({ config }: { config: QuizConfig }) {
 
   return (
     <div className="mx-auto max-w-xl">
-      {/* Progress + timer */}
-      <div className="mb-6 flex items-center gap-4">
-        <div className="flex-1 overflow-hidden rounded-full bg-muted h-1.5">
+      {/* Question progress + circular timer */}
+      <div className="mb-8 flex items-center gap-4">
+        <span className="shrink-0 text-sm text-muted-foreground">{current + 1} / {questions.length}</span>
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
           <motion.div
             className="h-full rounded-full bg-primary"
             animate={{ width: `${(current / questions.length) * 100}%` }}
             transition={{ duration: 0.3 }}
           />
         </div>
-        <span className="text-sm text-muted-foreground shrink-0">{current + 1} / {questions.length}</span>
-        <div className={cn("flex items-center gap-1 text-sm font-semibold tabular-nums shrink-0", timeLeft <= 5 ? "text-red-400" : "text-muted-foreground")}>
-          <Clock className="size-3.5" />
-          {timeLeft}s
-        </div>
-      </div>
-
-      {/* Timer bar */}
-      <div className="mb-8 h-1 overflow-hidden rounded-full bg-muted">
-        <motion.div
-          className={cn("h-full rounded-full transition-colors", timeLeft <= 5 ? "bg-red-400" : "bg-primary")}
-          animate={{ width: `${(timeLeft / TOTAL_TIME) * 100}%` }}
-          transition={{ duration: 0.9, ease: "linear" }}
-        />
+        <CircleTimer timeLeft={timeLeft} />
       </div>
 
       <AnimatePresence mode="wait">
@@ -283,9 +353,13 @@ export default function MultipleChoiceGame({ config }: { config: QuizConfig }) {
         >
           {/* Question card */}
           <div className="mb-6 flex flex-col items-center gap-4 rounded-2xl border border-border bg-card p-6 text-center">
-            {q.image && (
+            {q.image ? (
               <img src={q.image} alt="" className="size-24 rounded-xl object-cover shadow-lg" />
-            )}
+            ) : config.imagePlaceholder ? (
+              <div className="flex size-24 items-center justify-center rounded-xl bg-gradient-to-br from-primary/25 to-primary/5 shadow-lg ring-1 ring-border">
+                <span className="text-5xl font-bold text-primary/70 [font-family:var(--font-rounded)]">?</span>
+              </div>
+            ) : null}
             <p className="text-xl font-semibold leading-snug">{q.question}</p>
             {q.hint && <p className="text-sm text-muted-foreground">{q.hint}</p>}
           </div>
