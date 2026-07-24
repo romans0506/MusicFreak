@@ -109,7 +109,7 @@ export default function HigherLowerGame() {
           <p>♾️ Keep going until your first mistake</p>
           <p>🔥 How long is your streak?</p>
         </div>
-        <button onClick={startGame} className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-base font-semibold text-primary-foreground transition-all hover:bg-primary/80 hover:scale-105">
+        <button onClick={startGame} className="flex items-center gap-2 rounded-full bg-primary px-8 py-3 text-base font-semibold text-primary-foreground transition-[background-color,scale] duration-150 ease-out hover:bg-primary/80 hover:scale-105 active:scale-[0.96]">
           Start <ChevronRight className="size-5" />
         </button>
       </motion.div>

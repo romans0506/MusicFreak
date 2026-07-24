@@ -1,6 +1,6 @@
 "use client"
 
-import { motion } from "framer-motion"
+import { motion, type Variants } from "framer-motion"
 import { Headphones, TrendingUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import SignInButton from "@/components/sign-in-button"
@@ -10,6 +10,11 @@ const STATS = [
   { label: "Rounds Played", value: "450,000+" },
   { label: "Songs in Database", value: "50,000+" },
 ]
+
+const item: Variants = {
+  hidden: { opacity: 0, y: 12, filter: "blur(4px)" },
+  visible: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.5, ease: "easeOut" } },
+}
 
 export default function Hero() {
   return (
@@ -21,26 +26,35 @@ export default function Hero() {
 
       <div className="relative mx-auto max-w-6xl px-6 pt-32 pb-24">
         <motion.div
-          initial={{ opacity: 0, y: 28 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.65, ease: "easeOut" }}
+          initial="hidden"
+          animate="visible"
+          variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
           className="flex max-w-2xl flex-col items-start gap-8"
         >
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm text-primary">
+          <motion.div
+            variants={item}
+            className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm text-primary"
+          >
             <TrendingUp className="size-3.5" />
             Music Gaming Platform
-          </div>
+          </motion.div>
 
-          <h1 className="text-5xl font-bold leading-tight tracking-tight sm:text-6xl lg:text-7xl">
+          <motion.h1
+            variants={item}
+            className="text-5xl font-bold leading-tight tracking-tight text-balance sm:text-6xl lg:text-7xl"
+          >
             Test your <br />
             <span className="text-primary">music knowledge</span>
-          </h1>
+          </motion.h1>
 
-          <p className="max-w-lg text-lg leading-relaxed text-muted-foreground">
+          <motion.p
+            variants={item}
+            className="max-w-lg text-lg leading-relaxed text-muted-foreground text-pretty"
+          >
             Guess songs from snippets, take quizzes about artists and compete with friends on the leaderboard. Connect Spotify — and we'll show your personal stats.
-          </p>
+          </motion.p>
 
-          <div className="flex flex-wrap gap-3">
+          <motion.div variants={item} className="flex flex-wrap gap-3">
             <Button
               size="lg"
               className="gap-2"
@@ -50,16 +64,16 @@ export default function Hero() {
               Start Playing
             </Button>
             <SignInButton size="lg" variant="outline" />
-          </div>
+          </motion.div>
 
-          <div className="flex flex-wrap gap-10 border-t border-border pt-6">
+          <motion.div variants={item} className="flex flex-wrap gap-10 border-t border-border pt-6">
             {STATS.map((stat) => (
               <div key={stat.label} className="flex flex-col gap-0.5">
                 <span className="text-2xl font-bold text-primary">{stat.value}</span>
                 <span className="text-sm text-muted-foreground">{stat.label}</span>
               </div>
             ))}
-          </div>
+          </motion.div>
         </motion.div>
       </div>
     </section>

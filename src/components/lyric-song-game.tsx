@@ -107,7 +107,7 @@ export default function LyricSongGame() {
       <div className="grid w-full max-w-md gap-4 sm:grid-cols-2">
         <button
           onClick={() => setMode("top")}
-          className="group flex flex-col items-center gap-3 rounded-2xl border border-border bg-card p-6 text-center transition-all hover:border-primary/40 hover:bg-muted/40"
+          className="group flex flex-col items-center gap-3 rounded-2xl border border-border bg-card p-6 text-center transition-[color,background-color,border-color,scale] duration-150 ease-out hover:border-primary/40 hover:bg-muted/40 active:scale-[0.98]"
         >
           <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
             <ListMusic className="size-7" />
@@ -123,7 +123,7 @@ export default function LyricSongGame() {
 
         <button
           onClick={() => setMode("artist")}
-          className="group flex flex-col items-center gap-3 rounded-2xl border border-border bg-card p-6 text-center transition-all hover:border-primary/40 hover:bg-muted/40"
+          className="group flex flex-col items-center gap-3 rounded-2xl border border-border bg-card p-6 text-center transition-[color,background-color,border-color,scale] duration-150 ease-out hover:border-primary/40 hover:bg-muted/40 active:scale-[0.98]"
         >
           <div className="flex size-14 items-center justify-center rounded-2xl bg-orange-500/15 text-orange-400">
             <UserRound className="size-7" />

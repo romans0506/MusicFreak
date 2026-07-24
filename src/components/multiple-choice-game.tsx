@@ -236,7 +236,7 @@ export default function MultipleChoiceGame({ config }: { config: QuizConfig }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 + (config.rules?.length ?? 0) * 0.1 }}
           whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.97 }}
+          whileTap={{ scale: 0.96 }}
           onClick={startGame}
           className="group flex items-center gap-2 rounded-full bg-primary px-10 py-4 text-lg font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-colors [font-family:var(--font-rounded)] hover:bg-primary/90"
         >
@@ -317,7 +317,7 @@ export default function MultipleChoiceGame({ config }: { config: QuizConfig }) {
 
         <button
           onClick={startGame}
-          className="flex items-center gap-2 rounded-full border border-border bg-card px-6 py-2.5 text-sm font-medium transition-colors hover:bg-muted/40"
+          className="flex items-center gap-2 rounded-full border border-border bg-card px-6 py-2.5 text-sm font-medium transition-[color,background-color,scale] duration-150 ease-out hover:bg-muted/40 active:scale-[0.96]"
         >
           <RotateCcw className="size-4" /> Play Again
         </button>
@@ -354,13 +354,13 @@ export default function MultipleChoiceGame({ config }: { config: QuizConfig }) {
           {/* Question card */}
           <div className="mb-6 flex flex-col items-center gap-4 rounded-2xl border border-border bg-card p-6 text-center">
             {q.image ? (
-              <img src={q.image} alt="" className="size-24 rounded-xl object-cover shadow-lg" />
+              <img src={q.image} alt="" className="size-24 rounded-xl object-cover shadow-lg outline outline-1 -outline-offset-1 outline-white/10" />
             ) : config.imagePlaceholder ? (
               <div className="flex size-24 items-center justify-center rounded-xl bg-gradient-to-br from-primary/25 to-primary/5 shadow-lg ring-1 ring-border">
                 <span className="text-5xl font-bold text-primary/70 [font-family:var(--font-rounded)]">?</span>
               </div>
             ) : null}
-            <p className="text-xl font-semibold leading-snug">{q.question}</p>
+            <p className="text-xl font-semibold leading-snug text-balance">{q.question}</p>
             {q.hint && <p className="text-sm text-muted-foreground">{q.hint}</p>}
           </div>
 
@@ -382,10 +382,10 @@ export default function MultipleChoiceGame({ config }: { config: QuizConfig }) {
                 <motion.button
                   key={i}
                   whileHover={!isAnswered ? { scale: 1.02 } : {}}
-                  whileTap={!isAnswered ? { scale: 0.98 } : {}}
+                  whileTap={!isAnswered ? { scale: 0.96 } : {}}
                   disabled={isAnswered}
                   onClick={() => goToAnswer(i, timeLeft)}
-                  className={cn("rounded-xl border px-4 py-4 text-left text-sm font-medium transition-all", style)}
+                  className={cn("rounded-xl border px-4 py-4 text-left text-sm font-medium transition-[color,background-color,border-color,opacity]", style)}
                 >
                   {option}
                 </motion.button>

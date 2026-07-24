@@ -243,7 +243,7 @@ export default function StatsView({
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                     <div
-                      className="h-full rounded-full bg-primary transition-all"
+                      className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
                       style={{ width: `${(g.count / maxGenre) * 100}%` }}
                     />
                   </div>
@@ -261,7 +261,7 @@ export default function StatsView({
             key={r.key}
             onClick={() => setRange(r.key)}
             className={cn(
-              "rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200",
+              "rounded-full px-4 py-1.5 text-sm font-medium transition-[color,background-color,box-shadow,scale] duration-200 ease-out active:scale-[0.96]",
               range === r.key
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
@@ -318,7 +318,7 @@ export default function StatsView({
                     {/* Play-count bar */}
                     <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
                       <div
-                        className="h-full rounded-full bg-primary transition-all"
+                        className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
                         style={{ width: `${(count / max) * 100}%` }}
                       />
                     </div>

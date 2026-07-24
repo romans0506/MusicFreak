@@ -564,13 +564,13 @@ export default function NameSongGame({ userId }: { userId: string }) {
                 <motion.button
                   key={i}
                   whileHover={!isAnswered ? { scale: 1.02 } : {}}
-                  whileTap={!isAnswered ? { scale: 0.98 } : {}}
+                  whileTap={!isAnswered ? { scale: 0.96 } : {}}
                   disabled={isAnswered}
                   onClick={() => goToReveal(i, timeLeft)}
-                  className={cn("flex items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm font-medium transition-all", style)}
+                  className={cn("flex items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm font-medium transition-[color,background-color,border-color,opacity]", style)}
                 >
                   {option.albumArt ? (
-                    <img src={option.albumArt} alt="" className="size-11 shrink-0 rounded-md object-cover" />
+                    <img src={option.albumArt} alt="" className="size-11 shrink-0 rounded-md object-cover outline outline-1 -outline-offset-1 outline-white/10" />
                   ) : (
                     <div className="flex size-11 shrink-0 items-center justify-center rounded-md bg-muted">
                       <Music2 className="size-4 text-muted-foreground/40" />

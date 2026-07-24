@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+You have to start every line with calling my name.ф
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 @AGENTS.md

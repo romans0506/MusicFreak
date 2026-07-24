@@ -40,7 +40,7 @@ function ArtistCard({ artist }: { artist: SpotifyArtist }) {
         <img
           src={image}
           alt={artist.name}
-          className="size-20 rounded-full object-cover ring-2 ring-border transition-all group-hover:ring-primary/40 sm:size-24"
+          className="size-20 rounded-full object-cover outline outline-1 -outline-offset-1 outline-white/10 ring-2 ring-border transition-[box-shadow] duration-150 ease-out group-hover:ring-primary/40 sm:size-24"
         />
       ) : (
         <div className="flex size-20 items-center justify-center rounded-full bg-muted sm:size-24">

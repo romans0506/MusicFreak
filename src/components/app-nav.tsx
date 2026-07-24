@@ -56,7 +56,7 @@ export default function AppNav({ user, profile }: { user: User; profile?: Profil
                 key={tab.href}
                 href={tab.href}
                 className={cn(
-                  "rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200",
+                  "rounded-full px-4 py-1.5 text-sm font-medium transition-[color,background-color,box-shadow,scale] duration-200 ease-out active:scale-[0.96]",
                   isActive
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
@@ -78,7 +78,7 @@ export default function AppNav({ user, profile }: { user: User; profile?: Profil
               <img
                 src={avatarUrl}
                 alt={displayName}
-                className="size-7 rounded-full object-cover ring-2 ring-primary/30"
+                className="size-7 rounded-full object-cover outline outline-1 -outline-offset-1 outline-white/10 ring-2 ring-primary/30"
               />
             ) : (
               <div className="flex size-7 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
@@ -89,7 +89,7 @@ export default function AppNav({ user, profile }: { user: User; profile?: Profil
           </Link>
           <button
             onClick={signOut}
-            className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-[color,background-color,scale] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.96]"
             title="Sign out"
           >
             <LogOut className="size-4" />

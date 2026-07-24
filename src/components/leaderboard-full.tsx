@@ -66,7 +66,7 @@ export default function LeaderboardFull({
               <img
                 src={leader.avatar_url}
                 alt={leader.username ?? ""}
-                className="size-9 shrink-0 rounded-full object-cover"
+                className="size-9 shrink-0 rounded-full object-cover outline outline-1 -outline-offset-1 outline-white/10"
               />
             ) : (
               <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">

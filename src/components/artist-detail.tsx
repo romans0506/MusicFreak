@@ -199,13 +199,13 @@ export default function ArtistDetail({ artist, artistId, fans, isFavorited, love
               onClick={handleToggleFavorite}
               disabled={isPending}
               className={cn(
-                "mt-1 flex w-fit items-center gap-2 rounded-full border px-5 py-2 text-sm font-medium backdrop-blur-sm transition-all",
+                "mt-1 flex w-fit items-center gap-2 rounded-full border px-5 py-2 text-sm font-medium backdrop-blur-sm transition-[color,background-color,border-color,scale] duration-150 ease-out active:scale-[0.96]",
                 favorited
                   ? "border-white/50 bg-white/20 text-white hover:bg-white/30"
                   : "border-white/30 bg-black/20 text-white/80 hover:border-white/50 hover:text-white"
               )}
             >
-              <Heart className={cn("size-4 transition-all", favorited && "fill-current")} />
+              <Heart className={cn("size-4 transition-colors", favorited && "fill-current")} />
               {favorited ? "In favorites" : "Add to favorites"}
             </button>
           </div>

@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Signing you in…</title>
+  </head>
+  <body
+    style="font-family:-apple-system,system-ui,sans-serif;background:#121212;color:#f5f5f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
+    <p id="msg">Signing you in…</p>
+    <script>
+      // Supabase redirects here (a real https page via the tunnel) with
+      // ?app=<exp-deep-link>&code=...  We forward the OAuth params on to the
+      // Expo Go deep link, which the app's auth session intercepts to finish.
+      (function () {
+        var params = new URLSearchParams(location.search);
+        var app = params.get("app");
+        params.delete("app");
+        if (app) {
+          var sep = app.indexOf("?") >= 0 ? "&" : "?";
+          location.replace(app + sep + params.toString());
+        } else {
+          document.getElementById("msg").textContent = "Missing return target.";
+        }
+      })();
+    </script>
+  </body>
+</html>

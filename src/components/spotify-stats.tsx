@@ -53,7 +53,7 @@ function PopularityBar({ value }: { value: number }) {
     <div className="flex items-center gap-2 shrink-0">
       <div className="h-1.5 w-20 rounded-full bg-muted overflow-hidden">
         <div
-          className="h-full rounded-full bg-primary transition-all"
+          className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
           style={{ width: `${value}%` }}
         />
       </div>

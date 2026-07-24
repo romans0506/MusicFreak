@@ -82,6 +82,7 @@ export default function GamesGrid() {
             key={game.id}
             variants={card}
             whileHover={game.available ? { y: -4 } : {}}
+            whileTap={game.available ? { scale: 0.98 } : {}}
             onClick={() => game.available && (game as any).href && router.push((game as any).href)}
             className={cn(
               "group relative flex flex-col gap-6 overflow-hidden rounded-2xl border bg-card p-7 transition-colors",
@@ -105,8 +106,8 @@ export default function GamesGrid() {
             </div>
 
             <div className="relative flex-1">
-              <h3 className="text-lg font-semibold leading-snug">{game.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{game.description}</p>
+              <h3 className="text-lg font-semibold leading-snug text-balance">{game.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground text-pretty">{game.description}</p>
             </div>
 
             <div className="relative flex items-center justify-between">
@@ -114,7 +115,7 @@ export default function GamesGrid() {
                 {game.difficulty}
               </span>
               {game.available && (
-                <span className="flex items-center gap-1 text-sm font-medium text-primary transition-all group-hover:gap-2">
+                <span className="flex items-center gap-1 text-sm font-medium text-primary transition-[gap] duration-200 ease-out group-hover:gap-2">
                   Play <ChevronRight className="size-4" />
                 </span>
               )}

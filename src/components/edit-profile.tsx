@@ -241,7 +241,7 @@ export default function EditProfile({ open, onClose, userId, initial, onSaved }:
                 onClick={handleSave}
                 disabled={saving || uploadingAvatar || uploadingBanner}
                 className={cn(
-                  "flex items-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/80",
+                  "flex items-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-[background-color,scale] duration-150 ease-out hover:bg-primary/80 active:not-disabled:scale-[0.96]",
                   (saving || uploadingAvatar || uploadingBanner) && "opacity-60"
                 )}
               >
