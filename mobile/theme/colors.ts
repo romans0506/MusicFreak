@@ -6,6 +6,8 @@ export const colors = {
   background: "#121212",
   card: "#1c1c1e",
   cardElevated: "#242427",
+  /** Pressed/active fill — one step above `cardElevated`, still matte. */
+  cardPressed: "#2c2c30",
   foreground: "#f5f5f5",
   mutedForeground: "#8e8e93",
   primary: "#c81e33", // ≈ oklch(0.50 0.22 18) — dark crimson

@@ -47,6 +47,7 @@ function RootNavigator() {
       </Stack.Protected>
       <Stack.Protected guard={!!session}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="artist/[id]" options={{ animation: "slide_from_right" }} />
       </Stack.Protected>
     </Stack>
   );

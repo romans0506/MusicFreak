@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start --go",
-    "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
@@ -18,7 +17,7 @@
     "@react-navigation/native": "^7.1.8",
     "@supabase/supabase-js": "^2.108.2",
     "base64-arraybuffer": "^1.0.2",
-    "expo": "~54.0.34",
+    "expo": "~54.0.36",
     "expo-auth-session": "~7.0.11",
     "expo-blur": "~15.0.8",
     "expo-constants": "~18.0.13",

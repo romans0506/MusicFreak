@@ -13,7 +13,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 
 import EditProfileSheet from "@/components/edit-profile-sheet";
 import FavoriteSongs from "@/components/favorite-songs";
-import { GlassCard } from "@/components/glass-card";
+import { Surface } from "@/components/surface";
 import { GlowBackground } from "@/components/glow-background";
 import { AnimatedSpotifyStats } from "@/components/spotify-stats";
 import { useSession } from "@/lib/auth";
@@ -302,7 +302,7 @@ export default function ProfileScreen() {
             {/* Stat cards */}
             <View style={{ flexDirection: "row", gap: 12 }}>
               {statCards.map((s) => (
-                <GlassCard
+                <Surface
                   key={s.label}
                   radius={22}
                   style={{ flex: 1 }}
@@ -319,13 +319,13 @@ export default function ProfileScreen() {
                     {s.value}
                   </Text>
                   <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{s.label}</Text>
-                </GlassCard>
+                </Surface>
               ))}
             </View>
 
             {/* Listening time */}
             {(stats?.minutesTotal ?? 0) > 0 ? (
-              <GlassCard contentStyle={{ flexDirection: "row", padding: 18 }}>
+              <Surface contentStyle={{ flexDirection: "row", padding: 18 }}>
                 <View style={{ flex: 1, gap: 3 }}>
                   <Text style={{ color: colors.foreground, fontSize: 20, fontWeight: "800" }}>
                     {(stats?.minutesTotal ?? 0).toLocaleString("en")} min
@@ -339,7 +339,7 @@ export default function ProfileScreen() {
                   </Text>
                   <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>This week</Text>
                 </View>
-              </GlassCard>
+              </Surface>
             ) : null}
 
             {/* Favorite songs (Supabase) */}
@@ -351,7 +351,7 @@ export default function ProfileScreen() {
                 <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "700" }}>
                   Your Most Played
                 </Text>
-                <GlassCard radius={22}>
+                <Surface radius={22}>
                   {stats.mostPlayed.map((t, i) => (
                     <View
                       key={t.track_id}
@@ -414,7 +414,7 @@ export default function ProfileScreen() {
                       </Text>
                     </View>
                   ))}
-                </GlassCard>
+                </Surface>
               </View>
             ) : null}
 
@@ -425,9 +425,9 @@ export default function ProfileScreen() {
             <Pressable
               onPress={signOut}
               style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.97 : 1 }] })}>
-              <GlassCard radius={18} glow={false} contentStyle={{ paddingVertical: 15, alignItems: "center" }}>
+              <Surface radius={18} glow={false} contentStyle={{ paddingVertical: 15, alignItems: "center" }}>
                 <Text style={{ color: colors.red, fontSize: 16, fontWeight: "600" }}>Sign out</Text>
-              </GlassCard>
+              </Surface>
             </Pressable>
           </Animated.View>
         )}

@@ -3,7 +3,7 @@ import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { Image } from "expo-image";
 import Animated, { FadeIn } from "react-native-reanimated";
 
-import { GlassCard } from "@/components/glass-card";
+import { Surface } from "@/components/surface";
 import {
   getNowPlaying,
   getRecentlyPlayed,
@@ -90,7 +90,7 @@ export default function SpotifyStats() {
       {/* Now Playing */}
       <View>
         <SectionTitle emoji="📡" title="Now Playing" />
-        <GlassCard radius={22} contentStyle={{ padding: 14 }}>
+        <Surface radius={22} contentStyle={{ padding: 14 }}>
           {now === null ? (
             <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>Loading…</Text>
           ) : now.playing && now.track ? (
@@ -116,14 +116,14 @@ export default function SpotifyStats() {
               </Text>
             </View>
           )}
-        </GlassCard>
+        </Surface>
       </View>
 
       {/* Recently Played */}
       {recent && recent.length > 0 ? (
         <View>
           <SectionTitle emoji="🕑" title="Recently Played" />
-          <GlassCard radius={22}>
+          <Surface radius={22}>
             {(showAllRecent ? recent : recent.slice(0, RECENT_PREVIEW)).map((t, i, arr) => (
               <Pressable
                 key={`${t.id}-${t.playedAt}`}
@@ -151,7 +151,7 @@ export default function SpotifyStats() {
                 </Text>
               </Pressable>
             ))}
-          </GlassCard>
+          </Surface>
           {recent.length > RECENT_PREVIEW ? (
             <Pressable
               onPress={() => setShowAllRecent((v) => !v)}
@@ -219,7 +219,7 @@ function YourTop({ stats }: { stats: TopStats }) {
       <SectionTitle emoji="⭐" title="Your Top" />
 
       {/* Segmented toggle */}
-      <GlassCard
+      <Surface
         radius={999}
         glow={false}
         style={{ marginBottom: 16 }}
@@ -248,7 +248,7 @@ function YourTop({ stats }: { stats: TopStats }) {
             </Pressable>
           );
         })}
-      </GlassCard>
+      </Surface>
 
       {/* Carousel — bleeds to the screen edges for a premium feel */}
       <Animated.View key={tab} entering={FadeIn.duration(220)}>

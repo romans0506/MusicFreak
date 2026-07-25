@@ -36,6 +36,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="artists"
+        options={{
+          title: "Artists",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={26} name="music.mic" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="stats"
+        options={{
+          title: "Stats",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={26} name="chart.bar.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",

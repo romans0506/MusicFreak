@@ -18,6 +18,12 @@ const MAPPING = {
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
+  // Tab bar icons — without these the Android/web fallback renders nothing.
+  'gamecontroller.fill': 'videogame-asset',
+  'trophy.fill': 'emoji-events',
+  'music.mic': 'mic',
+  'chart.bar.fill': 'bar-chart',
+  'person.fill': 'person',
 } as IconMapping;
 
 /**

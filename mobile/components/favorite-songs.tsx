@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert, Linking, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 
-import { GlassCard } from "@/components/glass-card";
+import { Surface } from "@/components/surface";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
 
@@ -55,7 +55,7 @@ export default function FavoriteSongs({ userId }: { userId: string }) {
           Favorite Songs
         </Text>
       </View>
-      <GlassCard radius={22}>
+      <Surface radius={22}>
         {favorites.map((f, i) => (
           <Pressable
             key={f.id}
@@ -98,7 +98,7 @@ export default function FavoriteSongs({ userId }: { userId: string }) {
             </Pressable>
           </Pressable>
         ))}
-      </GlassCard>
+      </Surface>
       <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>
         Long-press a song to remove it. Add favorites on the web app.
       </Text>

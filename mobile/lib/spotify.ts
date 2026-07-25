@@ -50,6 +50,19 @@ export type RecentTrack = {
 };
 
 export type TopArtist = { id: string; name: string; image?: string; genre?: string };
+
+/** A fuller artist shape than TopArtist — /me/top/artists already returns all of this. */
+export type ArtistFull = {
+  id: string;
+  name: string;
+  image?: string;
+  genres: string[];
+  popularity: number;
+  followers: number;
+};
+
+export type GenreSlice = { genre: string; count: number };
+
 export type TopTrack = {
   id: string;
   name: string;
@@ -59,8 +72,6 @@ export type TopTrack = {
 };
 export type TopAlbum = { id: string; name: string; artist: string; image?: string; count: number };
 export type TopStats = { topArtists: TopArtist[]; topTracks: TopTrack[]; topAlbums: TopAlbum[] };
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export async function getNowPlaying(): Promise<NowPlaying> {
   const d = await me<any>("/me/player/currently-playing");
@@ -129,4 +140,90 @@ export async function getTopStats(): Promise<TopStats> {
     .slice(0, 5);
 
   return { topArtists, topTracks, topAlbums };
+}
+
+function toArtistFull(a: any): ArtistFull {
+  return {
+    id: a.id,
+    name: a.name,
+    image: a.images?.[0]?.url,
+    genres: a.genres ?? [],
+    popularity: a.popularity ?? 0,
+    followers: a.followers?.total ?? 0,
+  };
+}
+
+/**
+ * The user's top artists — the Artists tab's list. Mirrors the web
+ * /app/artists page (limit 24, medium_term). /me/top/artists returns complete
+ * artist objects, so genres/popularity/followers come along for free (unlike
+ * /v1/search, which omits followers for development-mode apps).
+ */
+export async function getTopArtistsFull(limit = 24): Promise<ArtistFull[]> {
+  const d = await me<any>(`/me/top/artists?limit=${limit}&time_range=medium_term`);
+  return (d?.items ?? []).map(toArtistFull);
+}
+
+/**
+ * Top genres, tallied across the user's top 50 artists — Spotify is the only
+ * genre source there is (play_history stores no genre). Same shape and cut-off
+ * (6) as the web stats page.
+ */
+export async function getTopGenres(): Promise<GenreSlice[]> {
+  const d = await me<any>("/me/top/artists?limit=50&time_range=medium_term");
+  if (!d) return [];
+
+  const tally: Record<string, number> = {};
+  for (const artist of d.items ?? []) {
+    for (const g of artist.genres ?? []) tally[g] = (tally[g] ?? 0) + 1;
+  }
+  return Object.entries(tally)
+    .map(([genre, count]) => ({ genre, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
+}
+
+/**
+ * A single artist. This is a catalog endpoint, but unlike batch /v1/artists?ids=
+ * and /v1/search it does answer a *user* token (the web artist page relies on
+ * the same thing), so the device can call it. Returns null when the token has
+ * aged out.
+ */
+export async function getArtist(artistId: string): Promise<ArtistFull | null> {
+  const d = await me<any>(`/artists/${artistId}`);
+  return d ? toArtistFull(d) : null;
+}
+
+/**
+ * An artist's "top tracks" for this user. GET /v1/artists/{id}/top-tracks is
+ * deprecated (403), so — exactly like the web artist-tracks route — we pull the
+ * user's own top tracks across all three time ranges and filter by artist.
+ */
+export async function getArtistTopTracks(artistId: string): Promise<TopTrack[]> {
+  const ranges = ["short_term", "medium_term", "long_term"];
+  const results = await Promise.all(
+    ranges.map((r) => me<any>(`/me/top/tracks?limit=50&time_range=${r}`)),
+  );
+
+  const seen = new Set<string>();
+  const matched: any[] = [];
+  for (const d of results) {
+    for (const track of d?.items ?? []) {
+      if (seen.has(track.id)) continue;
+      if (!(track.artists ?? []).some((a: any) => a.id === artistId)) continue;
+      seen.add(track.id);
+      matched.push(track);
+    }
+  }
+
+  return matched
+    .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+    .slice(0, 10)
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      artists: (t.artists ?? []).map((a: any) => a.name).join(", "),
+      albumArt: t.album?.images?.[0]?.url,
+      popularity: t.popularity ?? 0,
+    }));
 }
