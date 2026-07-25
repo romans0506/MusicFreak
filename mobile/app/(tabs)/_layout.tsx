@@ -1,12 +1,21 @@
+import { BottomTabBar } from "@react-navigation/bottom-tabs";
 import { Tabs } from "expo-router";
+import { View } from "react-native";
 
 import { HapticTab } from "@/components/haptic-tab";
+import { MiniPlayer } from "@/components/mini-player";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { colors } from "@/theme/colors";
 
 export default function TabLayout() {
   return (
     <Tabs
+      tabBar={(props) => (
+        <View>
+          <MiniPlayer />
+          <BottomTabBar {...props} />
+        </View>
+      )}
       screenOptions={{
         headerShown: false,
         tabBarButton: HapticTab,

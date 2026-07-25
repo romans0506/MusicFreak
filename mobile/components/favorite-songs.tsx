@@ -3,6 +3,7 @@ import { Alert, Linking, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 
 import { Surface } from "@/components/surface";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
 
@@ -50,7 +51,7 @@ export default function FavoriteSongs({ userId }: { userId: string }) {
   return (
     <View style={{ gap: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <Text style={{ fontSize: 16 }}>❤️</Text>
+        <IconSymbol name="heart.fill" size={16} color={colors.primary} />
         <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "700" }}>
           Favorite Songs
         </Text>
@@ -82,7 +83,7 @@ export default function FavoriteSongs({ userId }: { userId: string }) {
                   alignItems: "center",
                   justifyContent: "center",
                 }}>
-                <Text style={{ fontSize: 16 }}>🎵</Text>
+                <IconSymbol name="music.note" size={16} color={colors.mutedForeground} />
               </View>
             )}
             <View style={{ flex: 1 }}>
@@ -94,7 +95,7 @@ export default function FavoriteSongs({ userId }: { userId: string }) {
               </Text>
             </View>
             <Pressable onPress={() => confirmRemove(f)} hitSlop={10}>
-              <Text style={{ fontSize: 16 }}>❤️</Text>
+              <IconSymbol name="heart.fill" size={16} color={colors.primary} />
             </Pressable>
           </Pressable>
         ))}

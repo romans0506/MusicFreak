@@ -4,14 +4,14 @@ import { Image } from "expo-image";
 import Animated, { FadeIn } from "react-native-reanimated";
 
 import { Surface } from "@/components/surface";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import {
-  getNowPlaying,
   getRecentlyPlayed,
   getTopStats,
-  type NowPlaying,
   type RecentTrack,
   type TopStats,
 } from "@/lib/spotify";
+import { useNowPlaying } from "@/lib/now-playing";
 import { colors } from "@/theme/colors";
 
 function openSpotify(kind: "track" | "album", id?: string) {
@@ -28,17 +28,19 @@ function formatPlayed(playedAt: string) {
   return then.toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" });
 }
 
-function SectionTitle({ emoji, title }: { emoji: string; title: string }) {
+type SymbolName = Parameters<typeof IconSymbol>[0]["name"];
+
+function SectionTitle({ icon, title }: { icon: SymbolName; title: string }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
-      <Text style={{ fontSize: 16 }}>{emoji}</Text>
+      <IconSymbol name={icon} size={16} color={colors.primary} />
       <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "700" }}>{title}</Text>
     </View>
   );
 }
 
 
-function Thumb({ uri, round, fallback }: { uri?: string; round?: boolean; fallback: string }) {
+function Thumb({ uri, round, fallback }: { uri?: string; round?: boolean; fallback: SymbolName }) {
   const radius = round ? 999 : 8;
   if (uri) {
     return (
@@ -55,7 +57,7 @@ function Thumb({ uri, round, fallback }: { uri?: string; round?: boolean; fallba
         alignItems: "center",
         justifyContent: "center",
       }}>
-      <Text style={{ fontSize: 16 }}>{fallback}</Text>
+      <IconSymbol name={fallback} size={16} color={colors.mutedForeground} />
     </View>
   );
 }
@@ -63,17 +65,15 @@ function Thumb({ uri, round, fallback }: { uri?: string; round?: boolean; fallba
 const RECENT_PREVIEW = 4;
 
 export default function SpotifyStats() {
-  const [now, setNow] = useState<NowPlaying | null>(null);
+  // Shared poller — see lib/now-playing.tsx for why this is not fetched here.
+  const now = useNowPlaying();
   const [recent, setRecent] = useState<RecentTrack[] | null>(null);
   const [stats, setStats] = useState<TopStats | null>(null);
   const [showAllRecent, setShowAllRecent] = useState(false);
 
   useEffect(() => {
-    getNowPlaying().then(setNow);
     getRecentlyPlayed().then(setRecent);
     getTopStats().then(setStats);
-    const interval = setInterval(() => getNowPlaying().then(setNow), 30_000);
-    return () => clearInterval(interval);
   }, []);
 
   const hasAnything =
@@ -89,13 +89,13 @@ export default function SpotifyStats() {
     <View style={{ gap: 26 }}>
       {/* Now Playing */}
       <View>
-        <SectionTitle emoji="📡" title="Now Playing" />
+        <SectionTitle icon="dot.radiowaves.left.and.right" title="Now Playing" />
         <Surface radius={22} contentStyle={{ padding: 14 }}>
           {now === null ? (
             <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>Loading…</Text>
           ) : now.playing && now.track ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-              <Thumb uri={now.track.albumArt} fallback="🎵" />
+              <Thumb uri={now.track.albumArt} fallback="music.note" />
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600", marginBottom: 2 }}>
                   ● Playing
@@ -110,7 +110,7 @@ export default function SpotifyStats() {
             </View>
           ) : (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <Thumb fallback="🎵" />
+              <Thumb fallback="music.note" />
               <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>
                 Not playing anything right now
               </Text>
@@ -122,7 +122,7 @@ export default function SpotifyStats() {
       {/* Recently Played */}
       {recent && recent.length > 0 ? (
         <View>
-          <SectionTitle emoji="🕑" title="Recently Played" />
+          <SectionTitle icon="clock.arrow.circlepath" title="Recently Played" />
           <Surface radius={22}>
             {(showAllRecent ? recent : recent.slice(0, RECENT_PREVIEW)).map((t, i, arr) => (
               <Pressable
@@ -137,7 +137,7 @@ export default function SpotifyStats() {
                   borderBottomWidth: i < arr.length - 1 ? 1 : 0,
                   borderBottomColor: colors.border,
                 }}>
-                <Thumb uri={t.albumArt} fallback="🎵" />
+                <Thumb uri={t.albumArt} fallback="music.note" />
                 <View style={{ flex: 1 }}>
                   <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 14, fontWeight: "600" }}>
                     {t.name}
@@ -216,7 +216,7 @@ function YourTop({ stats }: { stats: TopStats }) {
 
   return (
     <View>
-      <SectionTitle emoji="⭐" title="Your Top" />
+      <SectionTitle icon="star.fill" title="Your Top" />
 
       {/* Segmented toggle */}
       <Surface
@@ -277,7 +277,7 @@ function YourTop({ stats }: { stats: TopStats }) {
                           alignItems: "center",
                           justifyContent: "center",
                         }}>
-                        <Text style={{ fontSize: 30 }}>🎤</Text>
+                        <IconSymbol name="music.mic" size={28} color={colors.mutedForeground} />
                       </View>
                     )}
                     <RankBadge rank={i + 1} />
@@ -332,7 +332,7 @@ function YourTop({ stats }: { stats: TopStats }) {
                           alignItems: "center",
                           justifyContent: "center",
                         }}>
-                        <Text style={{ fontSize: 34 }}>🎵</Text>
+                        <IconSymbol name="music.note" size={30} color={colors.mutedForeground} />
                       </View>
                     )}
                     <RankBadge rank={i + 1} />
@@ -370,7 +370,7 @@ function YourTop({ stats }: { stats: TopStats }) {
                           alignItems: "center",
                           justifyContent: "center",
                         }}>
-                        <Text style={{ fontSize: 34 }}>💿</Text>
+                        <IconSymbol name="opticaldisc.fill" size={30} color={colors.mutedForeground} />
                       </View>
                     )}
                     <RankBadge rank={i + 1} />

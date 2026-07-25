@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Linking,
   Pressable,
   RefreshControl,
@@ -9,20 +8,30 @@ import {
   View,
 } from "react-native";
 import { Image } from "expo-image";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { GlowBackground } from "@/components/glow-background";
+import { CountUp } from "@/components/count-up";
+import { Skeleton, SkeletonHero, SkeletonRow } from "@/components/skeleton";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { getTopGenres, type GenreSlice } from "@/lib/spotify";
 import { computeBadges, computeStreak, type Badge, type BadgeId } from "@/lib/stats";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
-import { cardSurface, softShadow } from "@/theme/surfaces";
+import { typography } from "@/theme/type";
+import { cardSurface } from "@/theme/surfaces";
 
 // Mirrors the web /app/stats page. Every number here comes from OUR own
 // play_history table via the aggregation RPCs (Spotify exposes no play counts) —
 // those are `security invoker`, so RLS scopes them to the signed-in user and the
 // device can call them directly. Only the genre breakdown needs a Spotify token,
 // so it degrades to a hidden section when the token has aged out.
+//
+// Layout: this screen leads with ONE hero number over the artwork of the track
+// you've played most, rather than a grid of same-sized tiles. Everything below
+// the hero is supporting detail and is deliberately quieter.
 
 type PlayCount = {
   track_id: string;
@@ -34,9 +43,9 @@ type PlayCount = {
 
 type Range = "week" | "month" | "all";
 const RANGES: { key: Range; label: string }[] = [
-  { key: "week", label: "This Week" },
-  { key: "month", label: "This Month" },
-  { key: "all", label: "All Time" },
+  { key: "week", label: "Week" },
+  { key: "month", label: "Month" },
+  { key: "all", label: "All" },
 ];
 
 type ListenKey = "day" | "week" | "month" | "year";
@@ -47,15 +56,15 @@ const PERIODS: { key: ListenKey; label: string; unlockDays: number }[] = [
   { key: "year", label: "This Year", unlockDays: 365 },
 ];
 
-// The web build uses lucide icons here; emoji keep this cross-platform without
-// pulling SF Symbols (iOS-only) into a data screen.
-const BADGE_EMOJI: Record<BadgeId, string> = {
-  "first-play": "✨",
-  century: "🏆",
-  explorer: "🧭",
-  dedicated: "🔥",
-  "night-owl": "🌙",
-  superfan: "❤️",
+type SymbolName = Parameters<typeof IconSymbol>[0]["name"];
+
+const BADGE_ICONS: Record<BadgeId, SymbolName> = {
+  "first-play": "sparkles",
+  century: "trophy.fill",
+  explorer: "map.fill",
+  dedicated: "flame.fill",
+  "night-owl": "moon.fill",
+  superfan: "heart.fill",
 };
 
 type StatsData = {
@@ -137,11 +146,19 @@ async function fetchStats(): Promise<StatsData> {
   return { week, month, all, totalPlays, streak, badges, hourly, genres, listening, trackedDays };
 }
 
-function SectionTitle({ emoji, title, trailing }: { emoji: string; title: string; trailing?: string }) {
+function SectionTitle({
+  icon,
+  title,
+  trailing,
+}: {
+  icon: SymbolName;
+  title: string;
+  trailing?: string;
+}) {
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
-      <Text style={{ fontSize: 15 }}>{emoji}</Text>
-      <Text style={{ color: colors.foreground, fontSize: 17, fontWeight: "700" }}>{title}</Text>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}>
+      <IconSymbol name={icon} size={16} color={colors.primary} />
+      <Text style={{ ...typography.section, color: colors.foreground }}>{title}</Text>
       {trailing ? (
         <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>{trailing}</Text>
       ) : null}
@@ -150,6 +167,7 @@ function SectionTitle({ emoji, title, trailing }: { emoji: string; title: string
 }
 
 export default function StatsScreen() {
+  const insets = useSafeAreaInsets();
   const [data, setData] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -182,383 +200,392 @@ export default function StatsScreen() {
   const peakHour = data ? data.hourly.indexOf(Math.max(...data.hourly)) : 0;
   const maxGenre = data && data.genres.length > 0 ? data.genres[0].count : 1;
 
+  // The hero shows the liveliest period we can honestly show: this week once
+  // we've tracked long enough for it to mean something, otherwise all-time.
+  const heroIsWeek = !!data && data.trackedDays >= 7 && data.listening.week > 0;
+  const heroMs = data ? (heroIsWeek ? data.listening.week : data.listening.total) : 0;
+  // The most-played track's artwork carries the hero. It's already in the payload.
+  const heroArt = data?.all[0]?.album_art ?? null;
+
+  if (loading || !data) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <SkeletonHero height={insets.top + 300} />
+        <View style={{ paddingHorizontal: 20, marginTop: 20, gap: 20 }}>
+          <Skeleton width={140} height={16} radius={5} />
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Skeleton width="47.5%" height={88} radius={22} style={{ flexGrow: 1 }} />
+            <Skeleton width="47.5%" height={88} radius={22} style={{ flexGrow: 1 }} />
+          </View>
+          <SkeletonRow />
+          <SkeletonRow />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <GlowBackground />
       <ScrollView
         style={{ flex: 1 }}
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ padding: 20, gap: 20 }}
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor={colors.mutedForeground}
+            progressViewOffset={insets.top}
           />
         }>
-        <Animated.View entering={FadeInDown.duration(500)} style={{ gap: 6 }}>
-          <Text
-            style={{
-              color: colors.foreground,
-              fontSize: 34,
-              fontWeight: "800",
-              letterSpacing: -0.5,
-            }}>
-            Listening Stats
-          </Text>
-          <Text style={{ color: colors.mutedForeground, fontSize: 15 }}>
-            Plays we&apos;ve tracked since you started using MusicFreak.
-          </Text>
-        </Animated.View>
-
-        {loading || !data ? (
-          <View style={{ paddingVertical: 80, alignItems: "center" }}>
-            <ActivityIndicator color={colors.primary} />
-          </View>
-        ) : (
-          <>
-            {/* Streak banner */}
-            <Animated.View
-              entering={FadeInDown.delay(80).duration(500)}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 16,
-                padding: 18,
-                borderRadius: 22,
-                borderCurve: "continuous",
-                borderWidth: 1,
-                borderColor: "rgba(200,30,51,0.3)",
-                backgroundColor: colors.primarySoft,
-              }}>
-              <View
-                style={{
-                  width: 54,
-                  height: 54,
-                  borderRadius: 18,
-                  borderCurve: "continuous",
-                  backgroundColor: "rgba(200,30,51,0.2)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}>
-                <Text style={{ fontSize: 26, opacity: data.streak.current > 0 ? 1 : 0.4 }}>🔥</Text>
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={{ color: colors.foreground, fontSize: 22, fontWeight: "800" }}>
-                  {data.streak.current}{" "}
-                  <Text style={{ fontSize: 15, fontWeight: "500", color: colors.mutedForeground }}>
-                    day{data.streak.current === 1 ? "" : "s"} streak
-                  </Text>
-                </Text>
-                <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>
-                  {data.streak.current > 0
-                    ? "Keep listening daily to grow it 🔥"
-                    : "Listen today to start a streak"}
-                  {data.streak.longest > 0 ? ` · Longest: ${data.streak.longest}` : ""}
-                </Text>
-              </View>
-            </Animated.View>
-
-            {/* Summary */}
-            <Animated.View
-              entering={FadeInDown.delay(140).duration(500)}
-              style={{ flexDirection: "row", gap: 12 }}>
-              {[
-                { value: data.totalPlays, label: "Total plays tracked" },
-                { value: data.all.length, label: "Unique songs" },
-              ].map((s) => (
-                <View key={s.label} style={{ ...cardSurface, ...softShadow, flex: 1, padding: 18, gap: 4 }}>
-                  <Text style={{ color: colors.primary, fontSize: 24, fontWeight: "800" }}>
-                    {s.value.toLocaleString("en")}
-                  </Text>
-                  <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>{s.label}</Text>
-                </View>
-              ))}
-            </Animated.View>
-
-            {/* Listening time */}
-            <Animated.View entering={FadeInDown.delay(200).duration(500)}>
-              <SectionTitle emoji="⏱️" title="Listening time" />
-              <Text style={{ color: colors.mutedForeground, fontSize: 13, marginBottom: 14, lineHeight: 19 }}>
-                {data.listening.total > 0
-                  ? `You've listened for ${formatListen(data.listening.total)} (${Math.round(
-                      data.listening.total / 60000,
-                    ).toLocaleString("en")} minutes) since you started.`
-                  : "Keep the app open while you listen on Spotify — your minutes will add up here."}
-              </Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-                {PERIODS.map((p) => {
-                  const locked = data.trackedDays < p.unlockDays;
-                  const remaining = p.unlockDays - data.trackedDays;
-                  return (
-                    <View
-                      key={p.key}
-                      style={{
-                        ...cardSurface,
-                        ...(locked ? null : softShadow),
-                        width: "47.5%",
-                        flexGrow: 1,
-                        minHeight: 96,
-                        padding: 16,
-                        justifyContent: "center",
-                        gap: 4,
-                        // Locked tiles sit flat and dim — only unlocked ones lift.
-                        opacity: locked ? 0.65 : 1,
-                      }}>
-                      {locked ? (
-                        <View style={{ alignItems: "center", gap: 4 }}>
-                          <Text style={{ fontSize: 18, opacity: 0.5 }}>🔒</Text>
-                          <Text style={{ color: colors.mutedForeground, fontSize: 13, fontWeight: "600" }}>
-                            {p.label}
-                          </Text>
-                          <Text style={{ color: colors.mutedForeground, fontSize: 11, opacity: 0.8 }}>
-                            Unlocks in {remaining} day{remaining === 1 ? "" : "s"}
-                          </Text>
-                        </View>
-                      ) : (
-                        <>
-                          <Text style={{ color: colors.primary, fontSize: 22, fontWeight: "800" }}>
-                            {formatListen(data.listening[p.key])}
-                          </Text>
-                          <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>{p.label}</Text>
-                        </>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            </Animated.View>
-
-            {/* Badges */}
-            <Animated.View entering={FadeInDown.delay(260).duration(500)}>
-              <SectionTitle
-                emoji="✨"
-                title="Badges"
-                trailing={`${data.badges.filter((b) => b.earned).length}/${data.badges.length}`}
+        {/* ---------- Hero: artwork + the one number that matters ---------- */}
+        <View style={{ height: insets.top + 300, justifyContent: "flex-end" }}>
+          {heroArt ? (
+            <Animated.View entering={FadeIn.duration(600)} style={{ position: "absolute", inset: 0 }}>
+              <Image source={heroArt} style={{ width: "100%", height: "100%" }} contentFit="cover" />
+              {/* Scrim: art stays legible as texture, text stays legible as text. */}
+              <LinearGradient
+                colors={[
+                  "rgba(18,18,18,0.45)",
+                  "rgba(18,18,18,0.70)",
+                  "rgba(18,18,18,0.94)",
+                  colors.background,
+                ]}
+                locations={[0, 0.45, 0.78, 1]}
+                style={{ position: "absolute", inset: 0 }}
               />
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-                {data.badges.map((badge) => (
+            </Animated.View>
+          ) : (
+            // No plays yet — a plain crimson wash rather than a broken image slot.
+            <LinearGradient
+              colors={["rgba(200,30,51,0.28)", colors.background]}
+              style={{ position: "absolute", inset: 0 }}
+            />
+          )}
+
+          <View style={{ paddingHorizontal: 20, paddingBottom: 24, gap: 6 }}>
+            <Text
+              style={{ ...typography.eyebrow, color: colors.mutedForeground }}>
+              {heroIsWeek ? "This week" : "All time"}
+            </Text>
+
+            <CountUp
+              value={heroMs}
+              format={formatListen}
+              style={{ ...typography.hero, color: colors.foreground }}
+            />
+
+            <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>
+              {data.totalPlays.toLocaleString("en")} plays · {data.all.length.toLocaleString("en")}{" "}
+              unique songs
+            </Text>
+
+            {data.streak.current > 0 ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
+                <IconSymbol name="flame.fill" size={15} color={colors.primary} />
+                <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: "600" }}>
+                  {data.streak.current} day streak
+                </Text>
+                {data.streak.longest > data.streak.current ? (
+                  <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>
+                    · best {data.streak.longest}
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={{ color: colors.mutedForeground, fontSize: 13, marginTop: 6 }}>
+                Listen today to start a streak
+              </Text>
+            )}
+          </View>
+        </View>
+
+        <View style={{ paddingHorizontal: 20, gap: 28, marginTop: 8 }}>
+          {/* ---------- Listening time ---------- */}
+          <Animated.View entering={FadeInDown.delay(120).duration(500)}>
+            <SectionTitle icon="clock.fill" title="Listening time" />
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+              {PERIODS.map((p) => {
+                const locked = data.trackedDays < p.unlockDays;
+                const remaining = p.unlockDays - data.trackedDays;
+                return (
                   <View
-                    key={badge.id}
+                    key={p.key}
                     style={{
                       ...cardSurface,
                       width: "47.5%",
                       flexGrow: 1,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: 14,
-                      opacity: badge.earned ? 1 : 0.5,
-                      borderColor: badge.earned ? "rgba(200,30,51,0.3)" : colors.border,
+                      minHeight: 88,
+                      padding: 16,
+                      justifyContent: "center",
+                      gap: 4,
+                      opacity: locked ? 0.55 : 1,
                     }}>
+                    {locked ? (
+                      <View style={{ alignItems: "center", gap: 5 }}>
+                        <IconSymbol name="lock.fill" size={15} color={colors.mutedForeground} />
+                        <Text
+                          style={{ color: colors.mutedForeground, fontSize: 13, fontWeight: "600" }}>
+                          {p.label}
+                        </Text>
+                        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>
+                          Unlocks in {remaining} day{remaining === 1 ? "" : "s"}
+                        </Text>
+                      </View>
+                    ) : (
+                      <>
+                        <Text
+                          style={{ ...typography.figure, color: colors.foreground }}>
+                          {formatListen(data.listening[p.key])}
+                        </Text>
+                        <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>{p.label}</Text>
+                      </>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </Animated.View>
+
+          {/* ---------- Badges ---------- */}
+          <Animated.View entering={FadeInDown.delay(180).duration(500)}>
+            <SectionTitle
+              icon="sparkles"
+              title="Badges"
+              trailing={`${data.badges.filter((b) => b.earned).length}/${data.badges.length}`}
+            />
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+              {data.badges.map((badge) => (
+                <View
+                  key={badge.id}
+                  style={{
+                    ...cardSurface,
+                    width: "47.5%",
+                    flexGrow: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: 13,
+                    opacity: badge.earned ? 1 : 0.45,
+                    borderColor: badge.earned ? "rgba(200,30,51,0.3)" : colors.border,
+                  }}>
+                  <View
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 12,
+                      borderCurve: "continuous",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: badge.earned ? colors.primarySoft : colors.cardElevated,
+                    }}>
+                    <IconSymbol
+                      name={BADGE_ICONS[badge.id]}
+                      size={16}
+                      color={badge.earned ? colors.primary : colors.mutedForeground}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      numberOfLines={1}
+                      style={{ color: colors.foreground, fontSize: 13, fontWeight: "700" }}>
+                      {badge.label}
+                    </Text>
+                    <Text numberOfLines={2} style={{ color: colors.mutedForeground, fontSize: 11 }}>
+                      {badge.description}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </Animated.View>
+
+          {/* ---------- When you listen ---------- */}
+          <Animated.View entering={FadeInDown.delay(240).duration(500)}>
+            <SectionTitle icon="chart.bar.fill" title="When you listen" />
+            {data.totalPlays === 0 ? (
+              <Text style={{ color: colors.mutedForeground, fontSize: 13, paddingVertical: 12 }}>
+                No plays tracked yet
+              </Text>
+            ) : (
+              <>
+                <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 3, height: 104 }}>
+                  {data.hourly.map((plays, h) => (
                     <View
+                      key={h}
                       style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 13,
-                        borderCurve: "continuous",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        backgroundColor: badge.earned ? colors.primarySoft : colors.cardElevated,
-                      }}>
-                      <Text style={{ fontSize: 18 }}>{BADGE_EMOJI[badge.id]}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
+                        flex: 1,
+                        height: Math.max(2, (plays / maxHour) * 104),
+                        borderTopLeftRadius: 3,
+                        borderTopRightRadius: 3,
+                        backgroundColor: h === peakHour ? colors.primary : "rgba(200,30,51,0.3)",
+                      }}
+                    />
+                  ))}
+                </View>
+                <View
+                  style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
+                  {["0h", "6h", "12h", "18h", "23h"].map((l) => (
+                    <Text key={l} style={{ color: colors.mutedForeground, fontSize: 10 }}>
+                      {l}
+                    </Text>
+                  ))}
+                </View>
+                <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 10 }}>
+                  Peak hour{" "}
+                  <Text style={{ color: colors.foreground, fontWeight: "600" }}>
+                    {peakHour}:00–{peakHour + 1}:00
+                  </Text>
+                </Text>
+              </>
+            )}
+          </Animated.View>
+
+          {/* ---------- Top genres ---------- */}
+          {data.genres.length > 0 ? (
+            <Animated.View entering={FadeInDown.delay(300).duration(500)}>
+              <SectionTitle icon="music.note" title="Top genres" />
+              <View style={{ gap: 11 }}>
+                {data.genres.map((g) => (
+                  <View key={g.genre} style={{ gap: 5 }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
                       <Text
                         numberOfLines={1}
-                        style={{ color: colors.foreground, fontSize: 13, fontWeight: "700" }}>
-                        {badge.label}
+                        style={{
+                          color: colors.foreground,
+                          fontSize: 13,
+                          flex: 1,
+                          textTransform: "capitalize",
+                        }}>
+                        {g.genre}
                       </Text>
-                      <Text numberOfLines={2} style={{ color: colors.mutedForeground, fontSize: 11 }}>
-                        {badge.description}
+                      <Text
+                        style={{
+                          color: colors.mutedForeground,
+                          fontSize: 13,
+                          fontVariant: ["tabular-nums"],
+                        }}>
+                        {g.count}
                       </Text>
+                    </View>
+                    <View
+                      style={{
+                        height: 5,
+                        borderRadius: 999,
+                        backgroundColor: colors.cardElevated,
+                        overflow: "hidden",
+                      }}>
+                      <View
+                        style={{
+                          height: "100%",
+                          width: `${(g.count / maxGenre) * 100}%`,
+                          borderRadius: 999,
+                          backgroundColor: colors.primary,
+                        }}
+                      />
                     </View>
                   </View>
                 ))}
               </View>
             </Animated.View>
+          ) : null}
 
-            {/* When you listen */}
-            <Animated.View entering={FadeInDown.delay(320).duration(500)} style={{ ...cardSurface, padding: 18 }}>
-              <SectionTitle emoji="📊" title="When you listen" />
-              {data.totalPlays === 0 ? (
-                <Text
-                  style={{
-                    color: colors.mutedForeground,
-                    fontSize: 13,
-                    textAlign: "center",
-                    paddingVertical: 20,
-                  }}>
-                  No plays tracked yet
-                </Text>
-              ) : (
-                <>
-                  <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 3, height: 112 }}>
-                    {data.hourly.map((plays, h) => (
-                      <View
-                        key={h}
-                        style={{
-                          flex: 1,
-                          height: Math.max(2, (plays / maxHour) * 112),
-                          borderTopLeftRadius: 3,
-                          borderTopRightRadius: 3,
-                          backgroundColor: h === peakHour ? colors.primary : "rgba(200,30,51,0.35)",
-                        }}
-                      />
-                    ))}
-                  </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
-                    {["0h", "6h", "12h", "18h", "23h"].map((l) => (
-                      <Text key={l} style={{ color: colors.mutedForeground, fontSize: 10 }}>
-                        {l}
-                      </Text>
-                    ))}
-                  </View>
-                  <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 8 }}>
-                    Peak hour:{" "}
-                    <Text style={{ color: colors.foreground, fontWeight: "600" }}>
-                      {peakHour}:00–{peakHour + 1}:00
-                    </Text>
-                  </Text>
-                </>
-              )}
-            </Animated.View>
-
-            {/* Top genres */}
-            <Animated.View entering={FadeInDown.delay(380).duration(500)} style={{ ...cardSurface, padding: 18 }}>
-              <SectionTitle emoji="🎵" title="Top genres" />
-              {data.genres.length === 0 ? (
-                <Text
-                  style={{
-                    color: colors.mutedForeground,
-                    fontSize: 13,
-                    textAlign: "center",
-                    paddingVertical: 20,
-                  }}>
-                  Listen to more music to see your genres
-                </Text>
-              ) : (
-                <View style={{ gap: 10 }}>
-                  {data.genres.map((g) => (
-                    <View key={g.genre} style={{ gap: 5 }}>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
-                        <Text
-                          numberOfLines={1}
-                          style={{
-                            color: colors.foreground,
-                            fontSize: 12,
-                            flex: 1,
-                            textTransform: "capitalize",
-                          }}>
-                          {g.genre}
-                        </Text>
-                        <Text
-                          style={{
-                            color: colors.mutedForeground,
-                            fontSize: 12,
-                            fontVariant: ["tabular-nums"],
-                          }}>
-                          {g.count}
-                        </Text>
-                      </View>
-                      <View
-                        style={{
-                          height: 6,
-                          borderRadius: 999,
-                          backgroundColor: colors.cardElevated,
-                          overflow: "hidden",
-                        }}>
-                        <View
-                          style={{
-                            height: "100%",
-                            width: `${(g.count / maxGenre) * 100}%`,
-                            borderRadius: 999,
-                            backgroundColor: colors.primary,
-                          }}
-                        />
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </Animated.View>
-
-            {/* Range pills */}
-            <Animated.View
-              entering={FadeInDown.delay(440).duration(500)}
+          {/* ---------- Most played ---------- */}
+          <Animated.View entering={FadeInDown.delay(360).duration(500)}>
+            <View
               style={{
                 flexDirection: "row",
-                alignSelf: "flex-start",
-                gap: 4,
-                padding: 4,
-                borderRadius: 999,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.card,
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 14,
               }}>
-              {RANGES.map((r) => {
-                const active = range === r.key;
-                return (
-                  <Pressable
-                    key={r.key}
-                    onPress={() => setRange(r.key)}
-                    style={({ pressed }) => ({
-                      paddingHorizontal: 14,
-                      paddingVertical: 7,
-                      borderRadius: 999,
-                      backgroundColor: active ? colors.cardElevated : "transparent",
-                      transform: [{ scale: pressed ? 0.96 : 1 }],
-                    })}>
-                    <Text
+              <Text style={{ ...typography.section, color: colors.foreground }}>
+                Most played
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: 2,
+                  padding: 3,
+                  borderRadius: 999,
+                  backgroundColor: colors.card,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}>
+                {RANGES.map((r) => {
+                  const active = range === r.key;
+                  return (
+                    <Pressable
+                      key={r.key}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setRange(r.key);
+                      }}
                       style={{
-                        color: active ? colors.foreground : colors.mutedForeground,
-                        fontSize: 13,
-                        fontWeight: "600",
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        backgroundColor: active ? colors.cardElevated : "transparent",
                       }}>
-                      {r.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </Animated.View>
+                      <Text
+                        style={{
+                          color: active ? colors.foreground : colors.mutedForeground,
+                          fontSize: 12,
+                          fontWeight: "600",
+                        }}>
+                        {r.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
 
-            {/* Most played list */}
             {tracks.length === 0 ? (
-              <View style={{ ...cardSurface, alignItems: "center", gap: 8, paddingVertical: 60, paddingHorizontal: 20 }}>
-                <Text style={{ fontSize: 32 }}>📊</Text>
-                <Text style={{ color: colors.foreground, fontSize: 16, fontWeight: "600" }}>
-                  No plays tracked yet
+              <View
+                style={{
+                  ...cardSurface,
+                  alignItems: "center",
+                  gap: 8,
+                  paddingVertical: 48,
+                  paddingHorizontal: 24,
+                }}>
+                <IconSymbol name="chart.bar.fill" size={26} color={colors.mutedForeground} />
+                <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: "600" }}>
+                  Nothing here yet
                 </Text>
                 <Text style={{ color: colors.mutedForeground, fontSize: 13, textAlign: "center" }}>
-                  Keep the app open while you listen on Spotify — your plays will show up here.
+                  Keep the app open while you listen on Spotify and your plays will show up here.
                 </Text>
               </View>
             ) : (
-              <View style={{ ...cardSurface, overflow: "hidden" }}>
+              // Rows, not cards: a hairline is enough separation, and dropping the
+              // card frame lets the artwork read as the content.
+              <View>
                 {tracks.map((track, i) => {
                   const count = Number(track.play_count);
                   return (
                     <Pressable
                       key={track.track_id}
-                      onPress={() =>
-                        Linking.openURL(`https://open.spotify.com/track/${track.track_id}`)
-                      }
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        Linking.openURL(`https://open.spotify.com/track/${track.track_id}`);
+                      }}
                       style={({ pressed }) => ({
                         flexDirection: "row",
                         alignItems: "center",
                         gap: 12,
-                        paddingHorizontal: 14,
-                        paddingVertical: 11,
+                        paddingVertical: 10,
                         borderBottomWidth: i < tracks.length - 1 ? 1 : 0,
                         borderBottomColor: colors.border,
-                        backgroundColor: pressed ? colors.cardElevated : "transparent",
+                        opacity: pressed ? 0.6 : 1,
                       })}>
                       <Text
                         style={{
                           width: 20,
-                          color: colors.mutedForeground,
+                          color: i === 0 ? colors.primary : colors.mutedForeground,
                           fontSize: 13,
-                          fontWeight: "600",
+                          fontWeight: "700",
                           fontVariant: ["tabular-nums"],
                         }}>
                         {i + 1}
@@ -567,38 +594,41 @@ export default function StatsScreen() {
                       {track.album_art ? (
                         <Image
                           source={track.album_art}
-                          style={{ width: 42, height: 42, borderRadius: 8 }}
+                          style={{ width: 46, height: 46, borderRadius: 8 }}
                           contentFit="cover"
                         />
                       ) : (
                         <View
                           style={{
-                            width: 42,
-                            height: 42,
+                            width: 46,
+                            height: 46,
                             borderRadius: 8,
                             backgroundColor: colors.cardElevated,
                             alignItems: "center",
                             justifyContent: "center",
                           }}>
-                          <Text style={{ fontSize: 16, opacity: 0.4 }}>🎵</Text>
+                          <IconSymbol name="music.note" size={16} color={colors.mutedForeground} />
                         </View>
                       )}
 
-                      <View style={{ flex: 1, gap: 4 }}>
+                      <View style={{ flex: 1, gap: 3 }}>
                         <Text
                           numberOfLines={1}
                           style={{ color: colors.foreground, fontSize: 14, fontWeight: "600" }}>
                           {track.name}
                         </Text>
-                        <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 12 }}>
+                        <Text
+                          numberOfLines={1}
+                          style={{ color: colors.mutedForeground, fontSize: 12 }}>
                           {track.artists}
                         </Text>
                         <View
                           style={{
-                            height: 3,
+                            height: 2,
                             borderRadius: 999,
                             backgroundColor: colors.cardElevated,
                             overflow: "hidden",
+                            marginTop: 2,
                           }}>
                           <View
                             style={{
@@ -613,23 +643,20 @@ export default function StatsScreen() {
 
                       <Text
                         style={{
-                          color: colors.primary,
+                          color: colors.foreground,
                           fontSize: 14,
                           fontWeight: "700",
                           fontVariant: ["tabular-nums"],
                         }}>
                         {count}
-                        <Text style={{ color: colors.mutedForeground, fontSize: 11, fontWeight: "400" }}>
-                          {count === 1 ? " play" : " plays"}
-                        </Text>
                       </Text>
                     </Pressable>
                   );
                 })}
               </View>
             )}
-          </>
-        )}
+          </Animated.View>
+        </View>
       </ScrollView>
     </View>
   );

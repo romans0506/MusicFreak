@@ -6,19 +6,22 @@ import {
   RefreshControl,
   ScrollView,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { GlowBackground } from "@/components/glow-background";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useSession } from "@/lib/auth";
 import { getArtist, getArtistTopTracks, type ArtistFull, type TopTrack } from "@/lib/spotify";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
+import { typography } from "@/theme/type";
 import { cardSurface } from "@/theme/surfaces";
 
 // Mobile counterpart of the web /app/artists/[id] page. What each block needs:
@@ -30,6 +33,9 @@ import { cardSurface } from "@/theme/surfaces";
 //   game ranking           → get_name_song_leaderboard RPC (security definer)
 // Deliberately dropped vs web: discography (needs an app token) and the
 // "#1 artist in" country chips (needs artist photos from an app token).
+//
+// Layout: the artist photo IS the header — full-bleed, name set over it. A
+// circular avatar floating on grey wastes the best image the screen has.
 
 type Fan = {
   user_id: string;
@@ -53,11 +59,21 @@ function avatarOf(p: Fan["profiles"]): string | null {
   return p?.custom_avatar_url ?? p?.avatar_url ?? null;
 }
 
-function Section({ emoji, title, trailing }: { emoji: string; title: string; trailing?: string }) {
+type SymbolName = Parameters<typeof IconSymbol>[0]["name"];
+
+function Section({
+  icon,
+  title,
+  trailing,
+}: {
+  icon: SymbolName;
+  title: string;
+  trailing?: string;
+}) {
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
-      <Text style={{ fontSize: 15 }}>{emoji}</Text>
-      <Text style={{ color: colors.foreground, fontSize: 17, fontWeight: "700" }}>{title}</Text>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}>
+      <IconSymbol name={icon} size={16} color={colors.primary} />
+      <Text style={{ ...typography.section, color: colors.foreground }}>{title}</Text>
       {trailing ? (
         <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>{trailing}</Text>
       ) : null}
@@ -70,12 +86,22 @@ export default function ArtistDetailScreen() {
   const artistId = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { session } = useSession();
   const userId = session?.user?.id ?? null;
 
   // Seeded from the route params so the header never renders empty.
   const [artist, setArtist] = useState<ArtistFull | null>(
-    params.name ? { id: artistId, name: params.name, image: params.image || undefined, genres: [], popularity: 0, followers: 0 } : null,
+    params.name
+      ? {
+          id: artistId,
+          name: params.name,
+          image: params.image || undefined,
+          genres: [],
+          popularity: 0,
+          followers: 0,
+        }
+      : null,
   );
   const [tracks, setTracks] = useState<TopTrack[]>([]);
   const [fans, setFans] = useState<Fan[]>([]);
@@ -128,6 +154,9 @@ export default function ArtistDetailScreen() {
     setSaving(true);
     const next = !favorited;
     setFavorited(next); // optimistic
+    Haptics.impactAsync(
+      next ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light,
+    );
 
     try {
       if (next) {
@@ -173,10 +202,12 @@ export default function ArtistDetailScreen() {
     );
   }
 
+  // Square-ish crop: tall enough to feel like a poster, short enough to leave
+  // the favourite button above the fold on a small phone.
+  const heroHeight = Math.min(width * 0.95, 380);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <GlowBackground />
-
       {/* Floating back button — this screen is headerless like the rest of the app */}
       <Pressable
         onPress={() => router.back()}
@@ -191,137 +222,143 @@ export default function ArtistDetailScreen() {
           borderRadius: 999,
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "rgba(28,28,30,0.85)",
-          borderWidth: 1,
-          borderColor: colors.border,
-          opacity: pressed ? 0.7 : 1,
+          backgroundColor: "rgba(18,18,18,0.6)",
+          opacity: pressed ? 0.6 : 1,
         })}>
-        <Text style={{ color: colors.foreground, fontSize: 18, marginTop: -2 }}>‹</Text>
+        <IconSymbol name="chevron.left" size={20} color={colors.foreground} />
       </Pressable>
 
       <ScrollView
         style={{ flex: 1 }}
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor={colors.mutedForeground}
+            progressViewOffset={insets.top}
           />
         }>
-        {/* Hero */}
-        <View style={{ alignItems: "center", paddingTop: insets.top + 56, paddingHorizontal: 20 }}>
+        {/* ---------- Hero: the artist photo is the header ---------- */}
+        <View style={{ height: heroHeight, justifyContent: "flex-end" }}>
           {artist?.image ? (
-            <View style={{ borderRadius: 999, overflow: "hidden" }}>
+            <Animated.View entering={FadeIn.duration(500)} style={{ position: "absolute", inset: 0 }}>
               <Image
                 source={artist.image}
-                style={{ width: 132, height: 132, borderRadius: 999 }}
+                style={{ width: "100%", height: "100%" }}
                 contentFit="cover"
               />
               <LinearGradient
-                colors={["transparent", "rgba(18,18,18,0.35)"]}
-                style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 44 }}
+                colors={[
+                  "rgba(18,18,18,0.55)",
+                  "rgba(18,18,18,0.15)",
+                  "rgba(18,18,18,0.85)",
+                  colors.background,
+                ]}
+                locations={[0, 0.35, 0.82, 1]}
+                style={{ position: "absolute", inset: 0 }}
               />
-            </View>
+            </Animated.View>
           ) : (
-            <View
-              style={{
-                width: 132,
-                height: 132,
-                borderRadius: 999,
-                backgroundColor: colors.cardElevated,
-                alignItems: "center",
-                justifyContent: "center",
-              }}>
-              <Text style={{ fontSize: 40, opacity: 0.4 }}>🎤</Text>
-            </View>
+            <LinearGradient
+              colors={["rgba(200,30,51,0.3)", colors.background]}
+              style={{ position: "absolute", inset: 0 }}
+            />
           )}
 
-          <Text
-            style={{
-              color: colors.foreground,
-              fontSize: 28,
-              fontWeight: "800",
-              letterSpacing: -0.5,
-              textAlign: "center",
-              marginTop: 16,
-            }}>
-            {artist?.name ?? "Artist"}
-          </Text>
+          <View style={{ paddingHorizontal: 20, paddingBottom: 18, gap: 6 }}>
+            <Text
+              numberOfLines={2}
+              style={{ ...typography.heroTitle, color: colors.foreground }}>
+              {artist?.name ?? "Artist"}
+            </Text>
 
-          {artist?.genres?.length ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {artist && artist.followers > 0 ? (
+                <Text
+                  style={{
+                    color: colors.foreground,
+                    fontSize: 13,
+                    fontWeight: "600",
+                    fontVariant: ["tabular-nums"],
+                  }}>
+                  {artist.followers.toLocaleString("en")} followers
+                </Text>
+              ) : null}
+              {artist?.genres?.length ? (
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    color: colors.mutedForeground,
+                    fontSize: 13,
+                    textTransform: "capitalize",
+                    flexShrink: 1,
+                  }}>
+                  {artist.followers > 0 ? "· " : ""}
+                  {artist.genres.slice(0, 2).join(" · ")}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        </View>
+
+        {/* ---------- Actions ---------- */}
+        <View style={{ flexDirection: "row", gap: 10, paddingHorizontal: 20, marginTop: 4 }}>
+          <Pressable
+            onPress={toggleFavorite}
+            disabled={saving}
+            style={({ pressed }) => ({
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              paddingHorizontal: 18,
+              paddingVertical: 11,
+              borderRadius: 999,
+              backgroundColor: favorited ? colors.primary : colors.card,
+              borderWidth: 1,
+              borderColor: favorited ? colors.primary : colors.border,
+              opacity: pressed || saving ? 0.75 : 1,
+            })}>
+            <IconSymbol
+              name={favorited ? "heart.fill" : "heart"}
+              size={16}
+              color={favorited ? colors.primaryForeground : colors.foreground}
+            />
             <Text
               style={{
-                color: colors.mutedForeground,
-                fontSize: 13,
-                textAlign: "center",
-                marginTop: 4,
-                textTransform: "capitalize",
+                color: favorited ? colors.primaryForeground : colors.foreground,
+                fontSize: 14,
+                fontWeight: "700",
               }}>
-              {artist.genres.slice(0, 3).join(" · ")}
+              {favorited ? "Favorited" : "Favorite"}
             </Text>
-          ) : null}
+          </Pressable>
 
-          {artist && artist.followers > 0 ? (
-            <Text style={{ color: colors.mutedForeground, fontSize: 13, marginTop: 6 }}>
-              {artist.followers.toLocaleString("en")} followers
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Linking.openURL(`https://open.spotify.com/artist/${artistId}`);
+            }}
+            style={({ pressed }) => ({
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              paddingHorizontal: 18,
+              paddingVertical: 11,
+              borderRadius: 999,
+              backgroundColor: colors.card,
+              borderWidth: 1,
+              borderColor: colors.border,
+              opacity: pressed ? 0.75 : 1,
+            })}>
+            <View
+              style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: colors.spotify }}
+            />
+            <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: "700" }}>
+              Open in Spotify
             </Text>
-          ) : null}
-
-          <View style={{ flexDirection: "row", gap: 10, marginTop: 18 }}>
-            <Pressable
-              onPress={toggleFavorite}
-              disabled={saving}
-              style={({ pressed }) => ({
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                paddingHorizontal: 18,
-                paddingVertical: 11,
-                borderRadius: 999,
-                backgroundColor: favorited ? colors.primary : colors.card,
-                borderWidth: 1,
-                borderColor: favorited ? colors.primary : colors.border,
-                opacity: pressed || saving ? 0.75 : 1,
-              })}>
-              <Text style={{ fontSize: 14 }}>{favorited ? "❤️" : "🤍"}</Text>
-              <Text
-                style={{
-                  color: favorited ? colors.primaryForeground : colors.foreground,
-                  fontSize: 14,
-                  fontWeight: "700",
-                }}>
-                {favorited ? "Favorited" : "Favorite"}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => Linking.openURL(`https://open.spotify.com/artist/${artistId}`)}
-              style={({ pressed }) => ({
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                paddingHorizontal: 18,
-                paddingVertical: 11,
-                borderRadius: 999,
-                backgroundColor: colors.card,
-                borderWidth: 1,
-                borderColor: colors.border,
-                opacity: pressed ? 0.75 : 1,
-              })}>
-              <View
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 999,
-                  backgroundColor: colors.spotify,
-                }}
-              />
-              <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: "700" }}>
-                Open in Spotify
-              </Text>
-            </Pressable>
-          </View>
+          </Pressable>
         </View>
 
         {loading ? (
@@ -329,39 +366,38 @@ export default function ArtistDetailScreen() {
             <ActivityIndicator color={colors.primary} />
           </View>
         ) : (
-          <View style={{ padding: 20, gap: 20, marginTop: 8 }}>
-            {/* Your top tracks by this artist */}
+          <View style={{ padding: 20, gap: 28, marginTop: 8 }}>
+            {/* ---------- Your top tracks by this artist ---------- */}
             <Animated.View entering={FadeInDown.delay(80).duration(450)}>
-              <Section emoji="🎧" title="Your top tracks" />
+              <Section icon="headphones" title="Your top tracks" />
               {tracks.length === 0 ? (
-                <View style={{ ...cardSurface, padding: 20 }}>
-                  <Text
-                    style={{ color: colors.mutedForeground, fontSize: 13, textAlign: "center" }}>
-                    None of your top tracks are by this artist yet.
-                  </Text>
-                </View>
+                <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>
+                  None of your top tracks are by this artist yet.
+                </Text>
               ) : (
-                <View style={{ ...cardSurface, overflow: "hidden" }}>
+                <View>
                   {tracks.map((track, i) => (
                     <Pressable
                       key={track.id}
-                      onPress={() => Linking.openURL(`https://open.spotify.com/track/${track.id}`)}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        Linking.openURL(`https://open.spotify.com/track/${track.id}`);
+                      }}
                       style={({ pressed }) => ({
                         flexDirection: "row",
                         alignItems: "center",
                         gap: 12,
-                        paddingHorizontal: 14,
-                        paddingVertical: 11,
+                        paddingVertical: 10,
                         borderBottomWidth: i < tracks.length - 1 ? 1 : 0,
                         borderBottomColor: colors.border,
-                        backgroundColor: pressed ? colors.cardElevated : "transparent",
+                        opacity: pressed ? 0.6 : 1,
                       })}>
                       <Text
                         style={{
                           width: 18,
-                          color: colors.mutedForeground,
+                          color: i === 0 ? colors.primary : colors.mutedForeground,
                           fontSize: 13,
-                          fontWeight: "600",
+                          fontWeight: "700",
                           fontVariant: ["tabular-nums"],
                         }}>
                         {i + 1}
@@ -369,20 +405,20 @@ export default function ArtistDetailScreen() {
                       {track.albumArt ? (
                         <Image
                           source={track.albumArt}
-                          style={{ width: 42, height: 42, borderRadius: 8 }}
+                          style={{ width: 46, height: 46, borderRadius: 8 }}
                           contentFit="cover"
                         />
                       ) : (
                         <View
                           style={{
-                            width: 42,
-                            height: 42,
+                            width: 46,
+                            height: 46,
                             borderRadius: 8,
                             backgroundColor: colors.cardElevated,
                             alignItems: "center",
                             justifyContent: "center",
                           }}>
-                          <Text style={{ fontSize: 16, opacity: 0.4 }}>🎵</Text>
+                          <IconSymbol name="music.note" size={16} color={colors.mutedForeground} />
                         </View>
                       )}
                       <View style={{ flex: 1 }}>
@@ -403,11 +439,11 @@ export default function ArtistDetailScreen() {
               )}
             </Animated.View>
 
-            {/* Name That Song ranking for this artist */}
+            {/* ---------- Name That Song ranking for this artist ---------- */}
             {leaders.length > 0 ? (
               <Animated.View entering={FadeInDown.delay(140).duration(450)}>
-                <Section emoji="🏆" title="Name That Song" trailing="best scores" />
-                <View style={{ ...cardSurface, overflow: "hidden" }}>
+                <Section icon="trophy.fill" title="Name That Song" trailing="best scores" />
+                <View>
                   {leaders.slice(0, 10).map((leader, i) => {
                     const isMe = leader.user_id === userId;
                     return (
@@ -417,20 +453,19 @@ export default function ArtistDetailScreen() {
                           flexDirection: "row",
                           alignItems: "center",
                           gap: 12,
-                          paddingHorizontal: 14,
-                          paddingVertical: 11,
+                          paddingVertical: 9,
                           borderBottomWidth: i < Math.min(leaders.length, 10) - 1 ? 1 : 0,
                           borderBottomColor: colors.border,
-                          backgroundColor: isMe ? colors.primarySoft : "transparent",
                         }}>
                         <Text
                           style={{
                             width: 22,
-                            color: colors.mutedForeground,
+                            color: i === 0 ? colors.primary : colors.mutedForeground,
                             fontSize: 13,
-                            fontWeight: "600",
+                            fontWeight: "700",
+                            fontVariant: ["tabular-nums"],
                           }}>
-                          #{i + 1}
+                          {i + 1}
                         </Text>
                         {leader.avatar_url ? (
                           <Image
@@ -463,6 +498,11 @@ export default function ArtistDetailScreen() {
                             fontWeight: "600",
                           }}>
                           {leader.username ?? "Anonymous"}
+                          {isMe ? (
+                            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
+                              {"  you"}
+                            </Text>
+                          ) : null}
                         </Text>
                         <Text
                           style={{
@@ -480,27 +520,25 @@ export default function ArtistDetailScreen() {
               </Animated.View>
             ) : null}
 
-            {/* Fans — who else favourited this artist */}
+            {/* ---------- Fans — who else favourited this artist ---------- */}
             <Animated.View entering={FadeInDown.delay(200).duration(450)}>
               <Section
-                emoji="👥"
+                icon="person.2.fill"
                 title="Fans on MusicFreak"
                 trailing={fans.length > 0 ? String(fans.length) : undefined}
               />
               {fans.length === 0 ? (
-                <View style={{ ...cardSurface, padding: 20 }}>
-                  <Text
-                    style={{ color: colors.mutedForeground, fontSize: 13, textAlign: "center" }}>
-                    No one has favorited this artist yet. Be the first.
-                  </Text>
-                </View>
+                <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>
+                  No one has favorited this artist yet. Be the first.
+                </Text>
               ) : (
-                <View style={{ ...cardSurface, padding: 16, flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                <View
+                  style={{ ...cardSurface, padding: 16, flexDirection: "row", flexWrap: "wrap", gap: 14 }}>
                   {fans.map((fan) => {
                     const avatar = avatarOf(fan.profiles);
                     const name = fan.profiles?.username ?? "Anonymous";
                     return (
-                      <View key={fan.user_id} style={{ alignItems: "center", gap: 5, width: 62 }}>
+                      <View key={fan.user_id} style={{ alignItems: "center", gap: 5, width: 60 }}>
                         {avatar ? (
                           <Image
                             source={avatar}

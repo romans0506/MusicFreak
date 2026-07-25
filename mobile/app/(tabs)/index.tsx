@@ -1,104 +1,121 @@
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { Image } from "expo-image";
 import Animated, { FadeInDown } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { GlowBackground } from "@/components/glow-background";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { colors } from "@/theme/colors";
+import { typography } from "@/theme/type";
+import { cardSurface } from "@/theme/surfaces";
 
-const GAMES = [
+type SymbolName = Parameters<typeof IconSymbol>[0]["name"];
+
+// The web app's three playable games. None of them are wired up on mobile yet —
+// the cards state that plainly rather than pretending to be tappable.
+const GAMES: {
+  id: string;
+  title: string;
+  description: string;
+  icon: SymbolName;
+  tint: string;
+}[] = [
   {
     id: "name-song",
     title: "Name That Song",
     description: "Pick an artist and guess their song from a 5-second clip",
-    icon: "sf:headphones",
+    icon: "headphones",
     tint: colors.primary,
   },
   {
     id: "music-quiz",
     title: "Music Quiz",
     description: "Questions about artists, albums and music history",
-    icon: "sf:brain.head.profile",
+    icon: "sparkles",
     tint: "#3b82f6",
   },
   {
     id: "lyric-song",
     title: "Lyric → Song",
     description: "You're shown a line from a song — find out where it's from",
-    icon: "sf:music.mic",
+    icon: "music.note.list",
     tint: "#f59e0b",
   },
 ];
 
 export default function GamesScreen() {
+  const insets = useSafeAreaInsets();
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <GlowBackground />
       <ScrollView
         style={{ flex: 1 }}
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ padding: 20, gap: 16 }}>
-        <Animated.View entering={FadeInDown.duration(500)} style={{ gap: 6, marginBottom: 4 }}>
-          <Text style={{ color: colors.foreground, fontSize: 34, fontWeight: "800", letterSpacing: -0.5 }}>
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 32 }}>
+        <Animated.View entering={FadeInDown.duration(500)} style={{ marginBottom: 24 }}>
+          <Text
+            style={{ ...typography.screenTitle, color: colors.foreground }}>
             Games
           </Text>
-          <Text style={{ color: colors.mutedForeground, fontSize: 15 }}>
-            Pick a game and test your music knowledge
+          <Text style={{ color: colors.mutedForeground, fontSize: 15, marginTop: 4 }}>
+            Play on the web for now — these are coming to mobile.
           </Text>
         </Animated.View>
 
-        {GAMES.map((game, i) => (
-          <Animated.View key={game.id} entering={FadeInDown.delay(120 + i * 80).duration(500)}>
-            <Pressable
-              style={({ pressed }) => ({
-                transform: [{ scale: pressed ? 0.97 : 1 }],
-                backgroundColor: colors.card,
-                borderRadius: 22,
-                borderCurve: "continuous",
-                padding: 18,
-                borderWidth: 1,
-                borderColor: colors.border,
-              })}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+        <View style={{ gap: 12 }}>
+          {GAMES.map((game, i) => (
+            <Animated.View key={game.id} entering={FadeInDown.delay(100 + i * 70).duration(500)}>
+              <Pressable
+                disabled
+                style={{
+                  ...cardSurface,
+                  padding: 18,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 14,
+                  opacity: 0.75,
+                }}>
                 <View
                   style={{
-                    width: 54,
-                    height: 54,
+                    width: 50,
+                    height: 50,
                     borderRadius: 16,
                     borderCurve: "continuous",
                     backgroundColor: game.tint + "26",
                     alignItems: "center",
                     justifyContent: "center",
                   }}>
-                  <Image source={game.icon} tintColor={game.tint} style={{ width: 26, height: 26 }} />
+                  <IconSymbol name={game.icon} size={22} color={game.tint} />
                 </View>
+
                 <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "700" }}>
+                  <Text style={{ ...typography.section, color: colors.foreground }}>
                     {game.title}
                   </Text>
                   <Text style={{ color: colors.mutedForeground, fontSize: 13, lineHeight: 18 }}>
                     {game.description}
                   </Text>
                 </View>
-                <Text style={{ color: colors.mutedForeground, fontSize: 20, fontWeight: "300" }}>›</Text>
-              </View>
-            </Pressable>
-          </Animated.View>
-        ))}
+              </Pressable>
+            </Animated.View>
+          ))}
+        </View>
 
         <Animated.View
-          entering={FadeInDown.delay(420).duration(500)}
+          entering={FadeInDown.delay(380).duration(500)}
           style={{
-            marginTop: 4,
-            alignItems: "center",
-            paddingVertical: 14,
+            marginTop: 18,
+            padding: 16,
             borderRadius: 16,
             borderCurve: "continuous",
             borderWidth: 1,
             borderColor: colors.border,
             borderStyle: "dashed",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
           }}>
-          <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>
-            🚧 Games are coming to mobile soon
+          <IconSymbol name="lightbulb.fill" size={17} color={colors.mutedForeground} />
+          <Text style={{ color: colors.mutedForeground, fontSize: 13, flex: 1, lineHeight: 18 }}>
+            Your scores from the web still count — they show up on the Leaderboard and your Profile.
           </Text>
         </Animated.View>
       </ScrollView>

@@ -14,6 +14,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import EditProfileSheet from "@/components/edit-profile-sheet";
 import FavoriteSongs from "@/components/favorite-songs";
 import { Surface } from "@/components/surface";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { GlowBackground } from "@/components/glow-background";
 import { AnimatedSpotifyStats } from "@/components/spotify-stats";
 import { useSession } from "@/lib/auth";
@@ -211,7 +212,8 @@ export default function ProfileScreen() {
               borderWidth: 1,
               borderColor: "rgba(255,255,255,0.18)",
             })}>
-            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>✎ Edit</Text>
+            <IconSymbol name="pencil" size={13} color="#fff" />
+            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>Edit</Text>
           </Pressable>
         </View>
 
@@ -389,7 +391,7 @@ export default function ProfileScreen() {
                             alignItems: "center",
                             justifyContent: "center",
                           }}>
-                          <Text style={{ fontSize: 16 }}>🎵</Text>
+                          <IconSymbol name="music.note" size={16} color={colors.mutedForeground} />
                         </View>
                       )}
                       <View style={{ flex: 1, gap: 2 }}>

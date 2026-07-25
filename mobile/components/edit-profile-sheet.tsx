@@ -14,6 +14,7 @@ import {
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { COUNTRY_LIST, countryName, flagUrl } from "@/lib/countries";
 import { pickAndUploadImage, saveProfile, type ProfileFields } from "@/lib/profile";
 import { colors } from "@/theme/colors";
@@ -166,9 +167,10 @@ export default function EditProfileSheet({
               {uploadingBanner ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600" }}>
-                  📷  Change banner
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <IconSymbol name="camera.fill" size={15} color="#fff" />
+                  <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600" }}>Change banner</Text>
+                </View>
               )}
             </View>
           </Pressable>
@@ -202,7 +204,7 @@ export default function EditProfileSheet({
                     alignItems: "center",
                     justifyContent: "center",
                   }}>
-                  <Text style={{ fontSize: 30 }}>🎵</Text>
+                  <IconSymbol name="music.note" size={28} color={colors.primary} />
                 </View>
               )}
               <View
@@ -222,7 +224,7 @@ export default function EditProfileSheet({
                 {uploadingAvatar ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={{ fontSize: 13 }}>📷</Text>
+                  <IconSymbol name="camera.fill" size={13} color="#fff" />
                 )}
               </View>
             </Pressable>
@@ -286,9 +288,12 @@ export default function EditProfileSheet({
               </Text>
             </Field>
 
-            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
-              💡 GIFs work for both avatar and banner.
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <IconSymbol name="lightbulb.fill" size={13} color={colors.mutedForeground} />
+              <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
+                GIFs work for both avatar and banner.
+              </Text>
+            </View>
 
             {error ? (
               <View
@@ -428,7 +433,7 @@ function CountryPicker({
                   {item.name}
                 </Text>
                 {isSel ? (
-                  <Text style={{ color: colors.primary, fontSize: 16 }}>✓</Text>
+                  <IconSymbol name="checkmark" size={16} color={colors.primary} />
                 ) : null}
               </Pressable>
             );

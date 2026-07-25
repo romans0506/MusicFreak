@@ -9,21 +9,64 @@ type IconMapping = Record<SymbolViewProps['name'], ComponentProps<typeof Materia
 type IconSymbolName = keyof typeof MAPPING;
 
 /**
- * Add your SF Symbols to Material Icons mappings here.
- * - see Material Icons in the [Icons Directory](https://icons.expo.fyi).
- * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
+ * SF Symbols to Material Icons mappings.
+ *
+ * This is the app's whole icon vocabulary — every glyph in the UI comes from
+ * here, so the set stays consistent instead of drifting into emoji. A name must
+ * exist in this map to be usable: TypeScript resolves `@/components/ui/icon-symbol`
+ * to this file, so `name` is typed as `keyof typeof MAPPING`.
+ *
+ * - SF Symbols catalogue: the SF Symbols app from Apple
+ * - Material names: https://icons.expo.fyi
  */
 const MAPPING = {
+  // Navigation & chrome
   'house.fill': 'home',
-  'paperplane.fill': 'send',
-  'chevron.left.forwardslash.chevron.right': 'code',
+  'chevron.left': 'chevron-left',
   'chevron.right': 'chevron-right',
-  // Tab bar icons — without these the Android/web fallback renders nothing.
+  'chevron.left.forwardslash.chevron.right': 'code',
+  'arrow.right': 'arrow-forward',
+  'xmark': 'close',
+  'checkmark': 'check',
+  'magnifyingglass': 'search',
+  'pencil': 'edit',
+  'paperplane.fill': 'send',
+
+  // Tab bar
   'gamecontroller.fill': 'videogame-asset',
   'trophy.fill': 'emoji-events',
   'music.mic': 'mic',
   'chart.bar.fill': 'bar-chart',
   'person.fill': 'person',
+
+  // Music & playback
+  'music.note': 'music-note',
+  'music.note.list': 'queue-music',
+  'opticaldisc.fill': 'album',
+  'headphones': 'headphones',
+  'dot.radiowaves.left.and.right': 'podcasts',
+  'clock.arrow.circlepath': 'history',
+  'play.fill': 'play-arrow',
+
+  // Stats & badges
+  'flame.fill': 'local-fire-department',
+  'sparkles': 'auto-awesome',
+  'lock.fill': 'lock',
+  'clock.fill': 'schedule',
+  'map.fill': 'explore',
+  'moon.fill': 'nightlight-round',
+  'star.fill': 'star',
+
+  // Social
+  'heart.fill': 'favorite',
+  'heart': 'favorite-border',
+  'person.2.fill': 'group',
+
+  // Profile editing
+  'camera.fill': 'photo-camera',
+  'lightbulb.fill': 'lightbulb',
+  'rectangle.portrait.and.arrow.right': 'logout',
+  'globe': 'public',
 } as IconMapping;
 
 /**

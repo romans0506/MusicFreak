@@ -1,9 +1,15 @@
+import {
+  Manrope_600SemiBold,
+  Manrope_800ExtraBold,
+  useFonts,
+} from "@expo-google-fonts/manrope";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, View } from "react-native";
 import "react-native-reanimated";
 
 import { SessionProvider, useSession } from "@/lib/auth";
+import { NowPlayingProvider } from "@/lib/now-playing";
 import { colors } from "@/theme/colors";
 
 export const unstable_settings = {
@@ -11,10 +17,21 @@ export const unstable_settings = {
 };
 
 export default function RootLayout() {
+  // Display face for headings and figures; body text stays on the OS font.
+  const [fontsLoaded] = useFonts({ Manrope_600SemiBold, Manrope_800ExtraBold });
+
+  // Hold the splash rather than flash unstyled text — the splash is the same
+  // #121212 as the app, so this reads as one continuous launch.
+  if (!fontsLoaded) {
+    return <View style={{ flex: 1, backgroundColor: colors.background }} />;
+  }
+
   return (
     <SessionProvider>
-      <RootNavigator />
-      <StatusBar style="light" />
+      <NowPlayingProvider>
+        <RootNavigator />
+        <StatusBar style="light" />
+      </NowPlayingProvider>
     </SessionProvider>
   );
 }
