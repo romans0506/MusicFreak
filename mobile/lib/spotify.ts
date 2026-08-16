@@ -100,6 +100,16 @@ export async function getRecentlyPlayed(limit = 20): Promise<RecentTrack[]> {
   }));
 }
 
+/**
+ * Raw `recently-played` items for the scrobbler — `RecentTrack` throws away the
+ * album/duration fields `play_history` needs. `after` is a Unix ms timestamp.
+ */
+export async function getRecentlyPlayedRaw(afterMs?: number | null): Promise<any[]> {
+  const cursor = afterMs ? `&after=${afterMs}` : "";
+  const d = await me<any>(`/me/player/recently-played?limit=50${cursor}`);
+  return d?.items ?? [];
+}
+
 export async function getTopStats(): Promise<TopStats> {
   const [artistsData, tracksData] = await Promise.all([
     me<any>("/me/top/artists?limit=5&time_range=short_term"),

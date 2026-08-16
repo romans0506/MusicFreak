@@ -1,12 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  Linking,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { Linking, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
@@ -14,8 +7,10 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CountUp } from "@/components/count-up";
+import { PullRefreshScroll } from "@/components/pull-refresh";
 import { Skeleton, SkeletonHero, SkeletonRow } from "@/components/skeleton";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { ingestRecentPlays } from "@/lib/scrobble";
 import { getTopGenres, type GenreSlice } from "@/lib/spotify";
 import { computeBadges, computeStreak, type Badge, type BadgeId } from "@/lib/stats";
 import { supabase } from "@/lib/supabase";
@@ -188,6 +183,8 @@ export default function StatsScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
+      // Bank any new plays first, so the numbers below actually move.
+      await ingestRecentPlays({ force: true });
       setData(await fetchStats());
     } finally {
       setRefreshing(false);
@@ -226,18 +223,13 @@ export default function StatsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView
+      <PullRefreshScroll
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        indicatorTop={insets.top + 8}
         style={{ flex: 1 }}
         contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={{ paddingBottom: 32 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.mutedForeground}
-            progressViewOffset={insets.top}
-          />
-        }>
+        contentContainerStyle={{ paddingBottom: 32 }}>
         {/* ---------- Hero: artwork + the one number that matters ---------- */}
         <View style={{ height: insets.top + 300, justifyContent: "flex-end" }}>
           {heroArt ? (
@@ -657,7 +649,7 @@ export default function StatsScreen() {
             )}
           </Animated.View>
         </View>
-      </ScrollView>
+      </PullRefreshScroll>
     </View>
   );
 }

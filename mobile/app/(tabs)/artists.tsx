@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TextInput,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { Pressable, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
@@ -15,6 +7,7 @@ import { useRouter } from "expo-router";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { PullRefreshScroll } from "@/components/pull-refresh";
 import { Skeleton } from "@/components/skeleton";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { getTopArtistsFull, type ArtistFull } from "@/lib/spotify";
@@ -242,19 +235,14 @@ export default function ArtistsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView
+      <PullRefreshScroll
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        indicatorTop={insets.top + 8}
         style={{ flex: 1 }}
         contentInsetAdjustmentBehavior="never"
         keyboardDismissMode="on-drag"
-        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 32 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.mutedForeground}
-            progressViewOffset={insets.top}
-          />
-        }>
+        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 32 }}>
         <View style={{ paddingHorizontal: 20, gap: 14, marginBottom: 18 }}>
           <Text
             style={{ ...typography.screenTitle, color: colors.foreground }}>
@@ -336,7 +324,7 @@ export default function ArtistsScreen() {
             </View>
           </>
         )}
-      </ScrollView>
+      </PullRefreshScroll>
     </View>
   );
 }

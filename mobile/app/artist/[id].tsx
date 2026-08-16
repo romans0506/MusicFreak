@@ -3,8 +3,6 @@ import {
   ActivityIndicator,
   Linking,
   Pressable,
-  RefreshControl,
-  ScrollView,
   Text,
   useWindowDimensions,
   View,
@@ -16,6 +14,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { PullRefreshScroll } from "@/components/pull-refresh";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useSession } from "@/lib/auth";
 import { getArtist, getArtistTopTracks, type ArtistFull, type TopTrack } from "@/lib/spotify";
@@ -228,18 +227,13 @@ export default function ArtistDetailScreen() {
         <IconSymbol name="chevron.left" size={20} color={colors.foreground} />
       </Pressable>
 
-      <ScrollView
+      <PullRefreshScroll
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        indicatorTop={insets.top + 8}
         style={{ flex: 1 }}
         contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={{ paddingBottom: 32 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.mutedForeground}
-            progressViewOffset={insets.top}
-          />
-        }>
+        contentContainerStyle={{ paddingBottom: 32 }}>
         {/* ---------- Hero: the artist photo is the header ---------- */}
         <View style={{ height: heroHeight, justifyContent: "flex-end" }}>
           {artist?.image ? (
@@ -574,7 +568,7 @@ export default function ArtistDetailScreen() {
             </Animated.View>
           </View>
         )}
-      </ScrollView>
+      </PullRefreshScroll>
     </View>
   );
 }

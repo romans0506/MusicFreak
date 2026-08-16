@@ -1,6 +1,7 @@
 import { createContext, use, useEffect, useState, type ReactNode } from "react";
 import { AppState } from "react-native";
 
+import { ingestRecentPlays } from "@/lib/scrobble";
 import { getNowPlaying, type NowPlaying } from "@/lib/spotify";
 
 // One poller for the whole app.
@@ -12,6 +13,9 @@ import { getNowPlaying, type NowPlaying } from "@/lib/spotify";
 // 30s matches the web app's currently-playing cache window. We also refresh
 // when the app comes back to the foreground, since an interval doesn't fire
 // while the app is suspended and the first thing you see should be current.
+//
+// The scrobbler rides along on this tick rather than running its own timer —
+// same reason. It self-throttles to 90s, so most ticks are a no-op.
 
 const POLL_MS = 30_000;
 
@@ -26,6 +30,7 @@ export function NowPlayingProvider({ children }: { children: ReactNode }) {
       getNowPlaying().then((n) => {
         if (!cancelled) setNow(n);
       });
+      ingestRecentPlays();
     };
 
     refresh();

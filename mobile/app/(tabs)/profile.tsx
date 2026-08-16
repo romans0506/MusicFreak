@@ -1,17 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeInDown } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import EditProfileSheet from "@/components/edit-profile-sheet";
+import { PullRefreshScroll } from "@/components/pull-refresh";
 import FavoriteSongs from "@/components/favorite-songs";
 import { Surface } from "@/components/surface";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -19,6 +14,7 @@ import { GlowBackground } from "@/components/glow-background";
 import { AnimatedSpotifyStats } from "@/components/spotify-stats";
 import { useSession } from "@/lib/auth";
 import { countryName, flagUrl } from "@/lib/countries";
+import { ingestRecentPlays } from "@/lib/scrobble";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
 
@@ -94,6 +90,7 @@ async function fetchStats(userId: string): Promise<Stats> {
 }
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const { session, signOut } = useSession();
   const user = session?.user;
   const userId = user?.id;
@@ -130,6 +127,8 @@ export default function ProfileScreen() {
     if (!userId) return;
     setRefreshing(true);
     try {
+      // Bank any new plays first, so the numbers below actually move.
+      await ingestRecentPlays({ force: true });
       setStats(await fetchStats(userId));
     } finally {
       setRefreshing(false);
@@ -166,16 +165,12 @@ export default function ProfileScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <GlowBackground />
-      <ScrollView
+      <PullRefreshScroll
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        indicatorTop={insets.top + 8}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.mutedForeground}
-          />
-        }>
+        contentContainerStyle={{ paddingBottom: 40 }}>
         {/* Hero banner */}
         <View style={{ height: 180 }}>
           {bannerUrl ? (
@@ -433,7 +428,7 @@ export default function ProfileScreen() {
             </Pressable>
           </Animated.View>
         )}
-      </ScrollView>
+      </PullRefreshScroll>
 
       {userId ? (
         <EditProfileSheet

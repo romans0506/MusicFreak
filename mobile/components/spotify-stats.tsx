@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { Image } from "expo-image";
+import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import Animated, { FadeIn } from "react-native-reanimated";
 
 import { Surface } from "@/components/surface";
@@ -9,6 +11,7 @@ import {
   getRecentlyPlayed,
   getTopStats,
   type RecentTrack,
+  type TopArtist,
   type TopStats,
 } from "@/lib/spotify";
 import { useNowPlaying } from "@/lib/now-playing";
@@ -17,6 +20,21 @@ import { colors } from "@/theme/colors";
 function openSpotify(kind: "track" | "album", id?: string) {
   if (!id) return;
   Linking.openURL(`https://open.spotify.com/${kind}/${id}`).catch(() => {});
+}
+
+/** Same navigation as the Artists tab — push the in-app artist page. */
+function useOpenArtist() {
+  const router = useRouter();
+  return useCallback(
+    (artist: TopArtist) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      router.push({
+        pathname: "/artist/[id]",
+        params: { id: artist.id, name: artist.name, image: artist.image ?? "" },
+      });
+    },
+    [router],
+  );
 }
 
 function formatPlayed(playedAt: string) {
@@ -213,6 +231,7 @@ function YourTop({ stats }: { stats: TopStats }) {
   ].filter((x): x is { key: TopTab; label: string } => x !== null);
 
   const [tab, setTab] = useState<TopTab>(available[0]?.key ?? "artists");
+  const openArtist = useOpenArtist();
 
   return (
     <View>
@@ -259,7 +278,16 @@ function YourTop({ stats }: { stats: TopStats }) {
           contentContainerStyle={{ paddingHorizontal: 20, gap: 14 }}>
           {tab === "artists"
             ? stats.topArtists.map((a, i) => (
-                <View key={a.id} style={{ width: 96, alignItems: "center", gap: 8 }}>
+                <Pressable
+                  key={a.id}
+                  onPress={() => openArtist(a)}
+                  style={({ pressed }) => ({
+                    width: 96,
+                    alignItems: "center",
+                    gap: 8,
+                    opacity: pressed ? 0.7 : 1,
+                    transform: [{ scale: pressed ? 0.97 : 1 }],
+                  })}>
                   <View>
                     {a.image ? (
                       <Image
@@ -305,7 +333,7 @@ function YourTop({ stats }: { stats: TopStats }) {
                       {a.genre}
                     </Text>
                   ) : null}
-                </View>
+                </Pressable>
               ))
             : null}
 

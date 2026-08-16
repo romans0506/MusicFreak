@@ -6,6 +6,7 @@ import {
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 
 import { SessionProvider, useSession } from "@/lib/auth";
@@ -27,12 +28,16 @@ export default function RootLayout() {
   }
 
   return (
-    <SessionProvider>
-      <NowPlayingProvider>
-        <RootNavigator />
-        <StatusBar style="light" />
-      </NowPlayingProvider>
-    </SessionProvider>
+    // Required by react-native-gesture-handler, which drives the custom
+    // pull-to-refresh (components/pull-refresh.tsx).
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SessionProvider>
+        <NowPlayingProvider>
+          <RootNavigator />
+          <StatusBar style="light" />
+        </NowPlayingProvider>
+      </SessionProvider>
+    </GestureHandlerRootView>
   );
 }
 

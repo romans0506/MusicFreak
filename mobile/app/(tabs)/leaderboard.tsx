@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { Image } from "expo-image";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { PullRefreshScroll } from "@/components/pull-refresh";
 import { Skeleton, SkeletonRow } from "@/components/skeleton";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useSession } from "@/lib/auth";
@@ -214,18 +215,13 @@ export default function LeaderboardScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView
+      <PullRefreshScroll
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        indicatorTop={insets.top + 8}
         style={{ flex: 1 }}
         contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 32 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.mutedForeground}
-            progressViewOffset={insets.top}
-          />
-        }>
+        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 32 }}>
         <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
           <Text
             style={{ ...typography.screenTitle, color: colors.foreground }}>
@@ -309,7 +305,7 @@ export default function LeaderboardScreen() {
             ) : null}
           </>
         )}
-      </ScrollView>
+      </PullRefreshScroll>
     </View>
   );
 }
