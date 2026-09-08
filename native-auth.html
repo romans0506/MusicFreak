@@ -9,12 +9,25 @@
     style="font-family:-apple-system,system-ui,sans-serif;background:#121212;color:#f5f5f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
     <p id="msg">Signing you in…</p>
     <script>
-      // Supabase redirects here (a real https page via the tunnel) with
-      // ?app=<exp-deep-link>&code=...  We forward the OAuth params on to the
-      // Expo Go deep link, which the app's auth session intercepts to finish.
+      // Two flows land here, both needing the same thing: forward the OAuth
+      // params on to the Expo Go deep link, which the app's auth session
+      // intercepts to finish.
+      //
+      //  1. Supabase sign-in  ?app=<exp-deep-link>&code=...
+      //  2. Spotify PKCE      ?code=...&state=<nonce>|<exp-deep-link>
+      //
+      // The second can't use ?app=, because Spotify matches redirect_uri
+      // against the registered URI exactly and the deep link differs per
+      // machine. The return target rides in `state` after the CSRF nonce
+      // instead. `state` is forwarded untouched so the app can check the nonce.
       (function () {
         var params = new URLSearchParams(location.search);
         var app = params.get("app");
+        if (!app) {
+          var state = params.get("state");
+          var bar = state ? state.indexOf("|") : -1;
+          if (bar >= 0) app = state.slice(bar + 1);
+        }
         params.delete("app");
         if (app) {
           var sep = app.indexOf("?") >= 0 ? "&" : "?";
