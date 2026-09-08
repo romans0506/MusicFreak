@@ -12,6 +12,7 @@ import { Skeleton, SkeletonHero, SkeletonRow } from "@/components/skeleton";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { ingestRecentPlays } from "@/lib/scrobble";
 import { getTopGenres, type GenreSlice } from "@/lib/spotify";
+import { useSpotifyEpoch } from "@/lib/spotify-auth";
 import { computeBadges, computeStreak, type Badge, type BadgeId } from "@/lib/stats";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
@@ -66,7 +67,10 @@ type StatsData = {
   week: PlayCount[];
   month: PlayCount[];
   all: PlayCount[];
+  /** All-time. Drives the badges and the empty state. */
   totalPlays: number;
+  /** Last 7 days — shown instead of totalPlays while the hero reads "This week". */
+  weekPlays: number;
   streak: { current: number; longest: number };
   badges: Badge[];
   hourly: number[];
@@ -82,9 +86,33 @@ function formatListen(ms: number): string {
   return `${minutes}m`;
 }
 
+/**
+ * Top tracks for the table. The 50 is a DISPLAY cap.
+ *
+ * Never derive an aggregate from this list's length or sum — it saturates at 50
+ * and silently stops growing. That's exactly how "plays" came to undercount
+ * everyone past 50 distinct tracks, drifting further the more they listened.
+ * Totals come from totalPlayCount() instead.
+ */
 async function counts(since: string | null): Promise<PlayCount[]> {
   const { data } = await supabase.rpc("get_play_counts", { p_since: since }).limit(50);
   return (data as PlayCount[]) ?? [];
+}
+
+/**
+ * How many plays we've recorded, optionally since a timestamp. `play_history`
+ * holds one row per play, so a head count *is* the answer — exact, uncapped,
+ * and it transfers no rows at all.
+ *
+ * `since` uses the same rolling 7-day window as the week track list above. If
+ * get_listening_minutes' week_ms turns out to be a calendar week, the two week
+ * figures in the hero could disagree slightly; that SQL isn't in the repo.
+ */
+async function playCount(since: string | null): Promise<number> {
+  let q = supabase.from("play_history").select("*", { count: "exact", head: true });
+  if (since) q = q.gte("played_at", since);
+  const { count } = await q;
+  return count ?? 0;
 }
 
 async function fetchStats(): Promise<StatsData> {
@@ -92,10 +120,13 @@ async function fetchStats(): Promise<StatsData> {
   const weekAgo = new Date(now - 7 * 86_400_000).toISOString();
   const monthAgo = new Date(now - 30 * 86_400_000).toISOString();
 
-  const [week, month, all, days, hours, favArtists, genres, minutesRows] = await Promise.all([
+  const [week, month, all, totalPlays, weekPlays, days, hours, favArtists, genres, minutesRows] =
+    await Promise.all([
     counts(weekAgo),
     counts(monthAgo),
     counts(null),
+    playCount(null),
+    playCount(weekAgo),
     supabase.rpc("get_play_days", { p_tz: "UTC" }),
     supabase.rpc("get_play_hours", { p_tz: "UTC" }),
     supabase.from("favorite_artists").select("artist_id", { count: "exact", head: true }),
@@ -116,8 +147,6 @@ async function fetchStats(): Promise<StatsData> {
   const firstPlay = m?.first_play ? new Date(m.first_play as string).getTime() : null;
   const trackedDays = firstPlay ? Math.floor((now - firstPlay) / 86_400_000) : 0;
 
-  const totalPlays = all.reduce((sum, t) => sum + Number(t.play_count), 0);
-
   const dayList = ((days.data as { day: string }[]) ?? []).map((d) => d.day);
   const streak = computeStreak(dayList, new Date().toISOString().slice(0, 10));
 
@@ -132,13 +161,27 @@ async function fetchStats(): Promise<StatsData> {
 
   const badges = computeBadges({
     totalPlays,
+    // Saturates at the 50 above, which is fine *only* because the Explorer
+    // badge asks ">= 50". Don't reuse this as a real distinct-track count.
     uniqueTracks: all.length,
     currentStreak: streak.current,
     hasNightPlay,
     favoriteArtistCount: favArtists.count ?? 0,
   });
 
-  return { week, month, all, totalPlays, streak, badges, hourly, genres, listening, trackedDays };
+  return {
+    week,
+    month,
+    all,
+    totalPlays,
+    weekPlays,
+    streak,
+    badges,
+    hourly,
+    genres,
+    listening,
+    trackedDays,
+  };
 }
 
 function SectionTitle({
@@ -168,6 +211,7 @@ export default function StatsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [range, setRange] = useState<Range>("all");
 
+  const epoch = useSpotifyEpoch();
   const load = useCallback(async () => {
     try {
       setData(await fetchStats());
@@ -177,8 +221,11 @@ export default function StatsScreen() {
   }, []);
 
   useEffect(() => {
+    // Reading `epoch` is what re-runs this when Spotify reconnects — the genre
+    // breakdown is the part of this screen that needs a live Spotify token.
+    void epoch;
     load();
-  }, [load]);
+  }, [load, epoch]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -201,6 +248,9 @@ export default function StatsScreen() {
   // we've tracked long enough for it to mean something, otherwise all-time.
   const heroIsWeek = !!data && data.trackedDays >= 7 && data.listening.week > 0;
   const heroMs = data ? (heroIsWeek ? data.listening.week : data.listening.total) : 0;
+  // The plays figure sits under the period label, so it has to obey it — an
+  // all-time count beneath a "This week" heading just reads as wrong.
+  const heroPlays = data ? (heroIsWeek ? data.weekPlays : data.totalPlays) : 0;
   // The most-played track's artwork carries the hero. It's already in the payload.
   const heroArt = data?.all[0]?.album_art ?? null;
 
@@ -268,8 +318,7 @@ export default function StatsScreen() {
             />
 
             <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>
-              {data.totalPlays.toLocaleString("en")} plays · {data.all.length.toLocaleString("en")}{" "}
-              unique songs
+              {heroPlays.toLocaleString("en")} plays
             </Text>
 
             {data.streak.current > 0 ? (

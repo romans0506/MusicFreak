@@ -1,4 +1,6 @@
 import { Pressable, ScrollView, Text, View } from "react-native";
+import * as Haptics from "expo-haptics";
+import { useRouter, type Href } from "expo-router";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -9,14 +11,17 @@ import { cardSurface } from "@/theme/surfaces";
 
 type SymbolName = Parameters<typeof IconSymbol>[0]["name"];
 
-// The web app's three playable games. None of them are wired up on mobile yet —
-// the cards state that plainly rather than pretending to be tappable.
+// The web app's three playable games, all now running on-device (lib/games.ts).
+// Higher or Lower is absent on purpose: it's paused on web too, because its
+// static artist pool needs ~200 single-artist Spotify calls to get real follower
+// counts and those keep tripping the 429 that also breaks OAuth login.
 const GAMES: {
   id: string;
   title: string;
   description: string;
   icon: SymbolName;
   tint: string;
+  href: Href;
 }[] = [
   {
     id: "name-song",
@@ -24,6 +29,7 @@ const GAMES: {
     description: "Pick an artist and guess their song from a 5-second clip",
     icon: "headphones",
     tint: colors.primary,
+    href: "/games/name-song",
   },
   {
     id: "music-quiz",
@@ -31,6 +37,7 @@ const GAMES: {
     description: "Questions about artists, albums and music history",
     icon: "sparkles",
     tint: "#3b82f6",
+    href: "/games/music-quiz",
   },
   {
     id: "lyric-song",
@@ -38,11 +45,13 @@ const GAMES: {
     description: "You're shown a line from a song — find out where it's from",
     icon: "music.note.list",
     tint: "#f59e0b",
+    href: "/games/lyric-song",
   },
 ];
 
 export default function GamesScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -56,7 +65,7 @@ export default function GamesScreen() {
             Games
           </Text>
           <Text style={{ color: colors.mutedForeground, fontSize: 15, marginTop: 4 }}>
-            Play on the web for now — these are coming to mobile.
+            Every point counts towards the Leaderboard.
           </Text>
         </Animated.View>
 
@@ -64,15 +73,18 @@ export default function GamesScreen() {
           {GAMES.map((game, i) => (
             <Animated.View key={game.id} entering={FadeInDown.delay(100 + i * 70).duration(500)}>
               <Pressable
-                disabled
-                style={{
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push(game.href);
+                }}
+                style={({ pressed }) => ({
                   ...cardSurface,
+                  backgroundColor: pressed ? colors.cardPressed : colors.card,
                   padding: 18,
                   flexDirection: "row",
                   alignItems: "center",
                   gap: 14,
-                  opacity: 0.75,
-                }}>
+                })}>
                 <View
                   style={{
                     width: 50,
@@ -94,6 +106,8 @@ export default function GamesScreen() {
                     {game.description}
                   </Text>
                 </View>
+
+                <IconSymbol name="chevron.right" size={18} color={colors.mutedForeground} />
               </Pressable>
             </Animated.View>
           ))}
@@ -115,7 +129,7 @@ export default function GamesScreen() {
           }}>
           <IconSymbol name="lightbulb.fill" size={17} color={colors.mutedForeground} />
           <Text style={{ color: colors.mutedForeground, fontSize: 13, flex: 1, lineHeight: 18 }}>
-            Your scores from the web still count — they show up on the Leaderboard and your Profile.
+            Scores sync with the web app both ways — one leaderboard, whichever you play on.
           </Text>
         </Animated.View>
       </ScrollView>

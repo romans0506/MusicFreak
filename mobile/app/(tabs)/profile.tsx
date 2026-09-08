@@ -11,6 +11,7 @@ import FavoriteSongs from "@/components/favorite-songs";
 import { Surface } from "@/components/surface";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { GlowBackground } from "@/components/glow-background";
+import { SpotifyReconnect } from "@/components/spotify-reconnect";
 import { AnimatedSpotifyStats } from "@/components/spotify-stats";
 import { useSession } from "@/lib/auth";
 import { countryName, flagUrl } from "@/lib/countries";
@@ -99,6 +100,10 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState(false);
+  // Bumped on pull. The Spotify panel keeps its own state, so without this a
+  // pull refreshed the Supabase numbers and left the Spotify block untouched —
+  // which is the one part of this screen a pull is most likely aimed at.
+  const [spotifyRefresh, setSpotifyRefresh] = useState(0);
 
   // Local overrides applied immediately after an edit so the UI updates without
   // a refetch (the stats refetch still happens in the background on pull).
@@ -130,6 +135,7 @@ export default function ProfileScreen() {
       // Bank any new plays first, so the numbers below actually move.
       await ingestRecentPlays({ force: true });
       setStats(await fetchStats(userId));
+      setSpotifyRefresh((n) => n + 1);
     } finally {
       setRefreshing(false);
     }
@@ -415,8 +421,11 @@ export default function ProfileScreen() {
               </View>
             ) : null}
 
+            {/* Only rendered if the Spotify connection actually needs redoing. */}
+            <SpotifyReconnect />
+
             {/* Spotify stats (Now Playing / Recently Played / Top …) */}
-            <AnimatedSpotifyStats />
+            <AnimatedSpotifyStats refreshKey={spotifyRefresh} />
 
             {/* Sign out */}
             <Pressable

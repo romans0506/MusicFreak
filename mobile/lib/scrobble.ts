@@ -16,10 +16,11 @@ import { supabase } from "@/lib/supabase";
  * write into the same table without double-counting. Keep the row shape in sync
  * with `src/app/api/spotify/ingest-plays/route.ts`.
  *
- * Caveat inherited from `lib/spotify.ts`: this runs on the device's
- * `provider_token`, so it goes quiet ~1h after login until the user signs in
- * again. Plays are not lost — `recently-played` still returns the last 50
- * whenever we next get a working token.
+ * This used to go quiet an hour after login, along with everything else that
+ * needed a Spotify token. Since lib/spotify-auth.ts it runs on a token we mint
+ * ourselves, so it keeps scrobbling for as long as the user stays signed in.
+ * A failed tick is still harmless either way — `recently-played` returns the
+ * last 50 plays whenever we next get a working token, so nothing is lost.
  */
 
 /** Spotify's own list only changes when a track finishes; polling faster is waste. */

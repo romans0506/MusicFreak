@@ -70,6 +70,11 @@ function RootNavigator() {
       <Stack.Protected guard={!!session}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="artist/[id]" options={{ animation: "slide_from_right" }} />
+        {/* Games are pushed over the tabs: a round wants the whole screen, and
+            the tab bar is an invitation to leave mid-question. */}
+        <Stack.Screen name="games/name-song" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="games/music-quiz" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="games/lyric-song" options={{ animation: "slide_from_right" }} />
       </Stack.Protected>
     </Stack>
   );

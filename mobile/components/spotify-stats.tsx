@@ -14,6 +14,7 @@ import {
   type TopArtist,
   type TopStats,
 } from "@/lib/spotify";
+import { useSpotifyEpoch } from "@/lib/spotify-auth";
 import { useNowPlaying } from "@/lib/now-playing";
 import { colors } from "@/theme/colors";
 
@@ -82,17 +83,23 @@ function Thumb({ uri, round, fallback }: { uri?: string; round?: boolean; fallba
 
 const RECENT_PREVIEW = 4;
 
-export default function SpotifyStats() {
+export default function SpotifyStats({ refreshKey = 0 }: { refreshKey?: number }) {
   // Shared poller — see lib/now-playing.tsx for why this is not fetched here.
   const now = useNowPlaying();
   const [recent, setRecent] = useState<RecentTrack[] | null>(null);
   const [stats, setStats] = useState<TopStats | null>(null);
   const [showAllRecent, setShowAllRecent] = useState(false);
 
+  // Refetch on reconnect (epoch) and on a pull-to-refresh from the profile
+  // (refreshKey). This used to be a bare [], which meant one failed fetch —
+  // an expired token, a dead network — left the panel empty until the app was
+  // remounted, and since it renders null when empty there was nothing on screen
+  // to pull on either. Signing out and back in was the only way to get it back.
+  const epoch = useSpotifyEpoch();
   useEffect(() => {
     getRecentlyPlayed().then(setRecent);
     getTopStats().then(setStats);
-  }, []);
+  }, [epoch, refreshKey]);
 
   const hasAnything =
     now?.playing ||
@@ -419,10 +426,10 @@ function YourTop({ stats }: { stats: TopStats }) {
 }
 
 // Tiny wrapper so the parent can fade the whole block in.
-export function AnimatedSpotifyStats() {
+export function AnimatedSpotifyStats({ refreshKey }: { refreshKey?: number }) {
   return (
     <Animated.View entering={FadeIn.duration(400)}>
-      <SpotifyStats />
+      <SpotifyStats refreshKey={refreshKey} />
     </Animated.View>
   );
 }

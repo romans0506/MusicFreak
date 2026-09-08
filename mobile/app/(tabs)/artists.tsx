@@ -11,6 +11,7 @@ import { PullRefreshScroll } from "@/components/pull-refresh";
 import { Skeleton } from "@/components/skeleton";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { getTopArtistsFull, type ArtistFull } from "@/lib/spotify";
+import { useSpotifyEpoch } from "@/lib/spotify-auth";
 import { colors } from "@/theme/colors";
 import { typography } from "@/theme/type";
 import { cardSurface } from "@/theme/surfaces";
@@ -177,17 +178,21 @@ export default function ArtistsScreen() {
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
 
+  const epoch = useSpotifyEpoch();
   const load = useCallback(async () => {
     const list = await getTopArtistsFull();
     setArtists(list);
-    // An empty list here almost always means the Spotify token aged out, since
-    // anyone signed in via Spotify has top artists.
+    // An empty list here almost always means we have no working Spotify token,
+    // since anyone signed in via Spotify has top artists.
     setFailed(list.length === 0);
   }, []);
 
   useEffect(() => {
+    // Reading `epoch` is what re-runs this when Spotify reconnects, so an empty
+    // result from a dead token doesn't stick for the life of the mount.
+    void epoch;
     load().finally(() => setLoading(false));
-  }, [load]);
+  }, [load, epoch]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

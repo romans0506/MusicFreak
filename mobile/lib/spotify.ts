@@ -1,15 +1,26 @@
+import { getSpotifyToken } from "@/lib/spotify-auth";
 import { supabase } from "@/lib/supabase";
 
 // Personal Spotify data (/v1/me/...) only — the reliable surface for a user
 // token. Catalog endpoints (/v1/search, /v1/artists) need an app token (client
 // secret) and 403 here, so we never call them from the device.
 //
-// We use the session's provider_token directly. It's fresh right after login
-// (~1h) and dropped on Supabase session refresh — minting a new one needs the
-// client secret, which must stay server-side. So every call degrades gracefully
-// to empty/null; full coverage returns once the web backend proxy is deployed.
+// Tokens come from lib/spotify-auth.ts, which holds our own PKCE refresh token
+// and mints a fresh access token whenever this asks for one. That is what keeps
+// a session alive indefinitely; this file used to read
+// `session.provider_token`, which Supabase drops on its own session refresh, so
+// everything here went dead roughly an hour after login.
+//
+// Calls still degrade to null/[] rather than throwing: the user can be offline,
+// cooling down from a 429, or not connected yet.
 
 async function userToken(): Promise<string | null> {
+  const token = await getSpotifyToken();
+  if (token) return token;
+
+  // Fallback for the gap between signing in and the PKCE connection being
+  // made — and for anyone still carrying a session from before it existed.
+  // Valid for about an hour after login and never renewed, hence the PKCE flow.
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -196,8 +207,8 @@ export async function getTopGenres(): Promise<GenreSlice[]> {
 /**
  * A single artist. This is a catalog endpoint, but unlike batch /v1/artists?ids=
  * and /v1/search it does answer a *user* token (the web artist page relies on
- * the same thing), so the device can call it. Returns null when the token has
- * aged out.
+ * the same thing), so the device can call it. Returns null if we can't get a
+ * token at all (offline, or Spotify disconnected).
  */
 export async function getArtist(artistId: string): Promise<ArtistFull | null> {
   const d = await me<any>(`/artists/${artistId}`);
@@ -236,4 +247,24 @@ export async function getArtistTopTracks(artistId: string): Promise<TopTrack[]> 
       albumArt: t.album?.images?.[0]?.url,
       popularity: t.popularity ?? 0,
     }));
+}
+
+/** A song the Lyric → Song game can look lyrics up for. */
+export type LyricSong = { id: string; name: string; artist: string };
+
+/**
+ * The user's top tracks as bare title+artist pairs — the pool for Lyric → Song's
+ * "Your Top 50" mode. Same request the web generator makes (limit 50,
+ * medium_term); we hand lrclib the title and artist, nothing else.
+ *
+ * Returns [] if there's no usable token, which the game surfaces as "pick an
+ * artist instead" rather than an error.
+ */
+export async function getTopTrackSongs(): Promise<LyricSong[]> {
+  const d = await me<any>("/me/top/tracks?limit=50&time_range=medium_term");
+  return (d?.items ?? []).map((t: any) => ({
+    id: t.id,
+    name: t.name,
+    artist: t.artists?.[0]?.name ?? "",
+  }));
 }

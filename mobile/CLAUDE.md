@@ -31,6 +31,7 @@ Typecheck from `mobile/`: the root `tsconfig.json` excludes `mobile`, so `npx ts
 - `app/_layout.tsx` — loads the display font, mounts `SessionProvider` + `NowPlayingProvider`, and gates routes with expo-router's `<Stack.Protected guard={...}>` (no manual redirects).
 - `app/(tabs)/` — Games · Leaderboard · Artists · Stats · Profile.
 - `app/artist/[id].tsx` — pushed over the tabs, registered in the root Stack.
+- `app/games/{name-song,music-quiz,lyric-song}.tsx` — likewise pushed over the tabs. A round wants the whole screen, and a tab bar under a running timer is an invitation to leave mid-question.
 - `app/login.tsx` — shown when there is no session.
 
 Screens are headerless (`headerShown: false`) and handle safe-area insets themselves via `useSafeAreaInsets()`, because several leads with a full-bleed image that must run under the status bar.
@@ -42,34 +43,70 @@ Screens are headerless (`headerShown: false`) and handle safe-area insets themse
 Unlike the web app, there is **no API layer**. The device talks straight to Supabase with the anon key (`lib/supabase.ts`), and RLS does the scoping.
 
 - Owner-scoped RPCs (`security invoker`): `get_play_counts`, `get_play_days`, `get_play_hours`, `get_listening_minutes`.
-- Writes: `play_history`, via the scrobbler below.
+- Writes: `play_history` (via the scrobbler below) and `scores` (via `saveScore()` in `lib/games.ts`). The web app posts scores to `/api/scores`, but that route also runs as the user rather than the service role, so a direct insert goes through exactly the same RLS policy.
 - Cross-user RPC (`security definer`): `get_name_song_leaderboard`.
 - Tables/views read directly: `profiles`, `leaderboard`, `scores`, `favorite_artists`, `favorite_songs`, plus the `profile-media` storage bucket.
 
 The SQL for these lives only in the Supabase editor, not in the repo — see `../CLAUDE.md` for the schema.
 
-`lib/stats.ts` is a **hand-copied port** of the web app's `src/lib/stats.ts` (`computeStreak`, `computeBadges`). There is no shared package between the two projects, so a change to one must be mirrored in the other or a streak will disagree across platforms.
+Three libraries are **hand-copied ports** of web files — there is no shared package between the two projects, so a change on one side must be mirrored on the other: `lib/stats.ts` (`computeStreak`, `computeBadges`, or a streak disagrees across platforms), `lib/itunes.ts`, and `lib/music-trivia.ts` (or the two quizzes drift apart). Each file's header records what, if anything, was changed in the copy.
 
 ## Spotify on the device
 
-`lib/spotify.ts` reads `session.provider_token` **directly**. The web app forbids this and mints fresh tokens server-side, but minting needs the client secret, which cannot ship in an app.
+**The app holds its own Spotify authorization — `lib/spotify-auth.ts`.** Every user token comes from `getSpotifyToken()`, which mints a fresh access token from a refresh token we keep in SecureStore. Sessions therefore do **not** expire; each helper still degrades to `null`/`[]` rather than throwing, for offline and 429.
 
-**Consequence:** every Spotify-backed feature stops working roughly an hour after login and stays dead until the user signs in again. Each helper degrades to `null`/`[]` rather than throwing. When choosing what to build, prefer data paths with no such fuse — Supabase RPCs, and the keyless iTunes/lrclib APIs the web games use.
+> **Never read `session.provider_token`.** (Same rule as the web app, different reason.) Supabase puts `provider_token`/`provider_refresh_token` in the session only in the moment after the OAuth exchange and drops both on its own session refresh — it never persists or renews them, and GoTrue exposes no endpoint that would. That is a documented Supabase design decision, not a bug to wait out. Reading it directly is what used to kill every Spotify-backed feature roughly an hour after login, with a sign-out/sign-in as the only cure. `lib/spotify.ts` keeps a fallback to it purely to cover the seconds between signing in and the PKCE connection being made.
+
+**Why PKCE, and why two authorizations.** Renewing Supabase's provider token is impossible on a device: it came from the confidential authorization-code flow, so it needs the client secret. Spotify's [Authorization Code with PKCE](https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow) is the documented flow for apps that can't hold a secret, and its refresh request takes only `grant_type`, `refresh_token` and `client_id` — no `Authorization: Basic` header. So the app runs two authorizations with different jobs: **Supabase OAuth** for identity/JWT/RLS, and **our PKCE flow** for a Spotify refresh token we own. The second costs no extra tap in practice — the user has just granted these scopes to this `client_id`, so Spotify redirects straight through its consent screen. `connectSpotify()` runs automatically at the end of `signIn()` and is deliberately non-fatal: a failure there still leaves a working signed-in session.
+
+Scopes live in `spotify-auth.ts` as `SPOTIFY_SCOPES` and are imported by `lib/auth.tsx`, so the two authorizations can't drift apart and leave one short of a permission.
+
+**Setup this depends on** — both are one-time, and sign-in's Spotify half fails without them:
+1. `EXPO_PUBLIC_SPOTIFY_CLIENT_ID` in `mobile/.env.local` (the client *id* is public by design under PKCE; the secret must never be added).
+2. `<EXPO_PUBLIC_AUTH_BRIDGE>/native-auth.html` registered as a Redirect URI in the Spotify dashboard, **exactly**, with no query string. Spotify matches redirect URIs by exact string — no wildcards, unlike Supabase — which is why the app's deep link can't ride along as `?app=` the way it does for the Supabase flow. It goes in `state` instead, after a CSRF nonce (`<nonce>|<deep link>`), and `auth-bridge/native-auth.html` unpacks it. **That bridge page must be republished** after any change to it.
+
+**Fetching Spotify data in a screen.** Put `useSpotifyEpoch()` in the deps of any effect that caches a Spotify result. A fetch that ran without a working token caches its *empty* answer for the life of the mount, and reconnecting does not bring it back — the only cure is a full remount, i.e. signing out and in, which is the exact misery the PKCE flow exists to end. The epoch changes on a successful (re)connect and nothing else, so a normal launch still fetches once. `components/spotify-stats.tsx` is the cautionary tale: it fetched with `[]` deps *and* renders `null` when it has nothing, so one failed fetch made the whole Now Playing / Recently Played / Top block vanish with no pull affordance left on screen to recover it. It now also takes a `refreshKey` prop, which the profile's pull-to-refresh bumps — the panel owns its state, so the parent's pull can't reach it otherwise.
+
+**When a token really is dead.** Only an `invalid_grant` on refresh — the user revoked MusicFreak in their Spotify account — clears the stored token and flips `useSpotifyConnection()` to `false`, which surfaces `components/spotify-reconnect.tsx` on the profile screen. Offline blips and 5xx deliberately do *not*, since nagging someone to reconnect can't fix a lost network. A 429 sets a local cool-down that respects `Retry-After`, for the same shared-`client_id` reason the web app has a global one.
 
 **What the device can and cannot call:**
 
 | Endpoint | Works? |
 |---|---|
-| `/v1/me/...` (top artists/tracks, now-playing, recently-played) | yes, until the token ages out |
+| `/v1/me/...` (top artists/tracks, now-playing, recently-played) | yes |
 | `GET /v1/artists/{id}` (single) | yes — answers a user token |
 | `/v1/search`, artist discography, batch `/v1/artists?ids=` | **no** — need the app token (client secret) |
 | `GET /v1/artists/{id}/top-tracks` | **no** — deprecated, 403. Derive from `/me/top/tracks` across all three time ranges, filtered by artist |
 
-Because catalog search is impossible here, the Artists screen filters the user's own top artists locally instead of searching Spotify, and the artist screen has no discography.
+Because catalog search is impossible here, the Artists screen filters the user's own top artists locally instead of searching Spotify, and the artist screen has no discography. The games' artist picker gets around it differently — it searches **iTunes**, which is keyless and is already the catalogue those games draw their songs from (see below).
 
 **One poller, app-wide.** `lib/now-playing.tsx` polls currently-playing every 30s (plus on foreground) and shares it through context. Both the mini-player and the profile panel consume it. Do not add a second poll — the `client_id` is rate-limited and a 429 on it also breaks OAuth login. `lib/scrobble.ts` rides this same tick for the same reason.
 
-**Scrobbling — `lib/scrobble.ts`.** Every listening figure in the app (minutes, top artists/albums, streaks) is summed from rows *we* write into `play_history`; Spotify publishes no play counts. `ingestRecentPlays()` is the device-side twin of the web app's `<PlayScrobbler/>` + `/api/spotify/ingest-plays` — same `after=<last stored play>` cursor and same `(user_id, played_at)` dedup key, so both platforms write into one table without double-counting. **Keep the row shape in sync with `src/app/api/spotify/ingest-plays/route.ts`** (notably `duration_ms`, which is what minutes-listened sums). It self-throttles to 90s; pull-to-refresh on Stats and Profile calls it with `{ force: true }` before re-reading, so a pull visibly moves the numbers. Like everything else here it dies with the provider token ~1h after login — nothing is lost, since `recently-played` still returns the last 50 plays whenever a working token comes back, but a phone-only user who never signs back in will see listening time stall.
+**Scrobbling — `lib/scrobble.ts`.** Every listening figure in the app (minutes, top artists/albums, streaks) is summed from rows *we* write into `play_history`; Spotify publishes no play counts. `ingestRecentPlays()` is the device-side twin of the web app's `<PlayScrobbler/>` + `/api/spotify/ingest-plays` — same `after=<last stored play>` cursor and same `(user_id, played_at)` dedup key, so both platforms write into one table without double-counting. **Keep the row shape in sync with `src/app/api/spotify/ingest-plays/route.ts`** (notably `duration_ms`, which is what minutes-listened sums). It self-throttles to 90s; pull-to-refresh on Stats and Profile calls it with `{ force: true }` before re-reading, so a pull visibly moves the numbers. It used to go quiet ~1h after login along with everything else Spotify-backed; since `lib/spotify-auth.ts` it keeps scrobbling for as long as the user stays signed in. A missed tick was never lossy anyway — `recently-played` returns the last 50 plays whenever a working token comes back.
+
+## Games
+
+All three of the web app's playable games run here. **Higher or Lower is deliberately absent** — it's paused on web too, because its static artist pool needs real follower counts and fetching them means ~200 single-artist Spotify calls that keep tripping the 429 that also breaks OAuth login.
+
+| Game | `scores.game_type` | Screen | Source of truth |
+|---|---|---|---|
+| Name That Song | `guess-second` | `app/games/name-song.tsx` | iTunes — song list **and** 30s preview |
+| Music Quiz | `music-quiz` | `app/games/music-quiz.tsx` | static bank, `lib/music-trivia.ts` |
+| Lyric → Song | `lyric-song` | `app/games/lyric-song.tsx` | lrclib.net lyrics + iTunes / your top tracks |
+
+**No API layer, so the generators moved onto the device.** On web each game is built by a route handler (`src/app/api/games/*`, plus `/api/quiz/generate`) that needs the app token and a server-side limiter. `lib/games.ts` is the device-side twin of all of them. This only works because the web generators already leaned on keyless sources for the parts that matter — which is also why the games are the most robust feature in the app: nothing but Lyric → Song's *Your Top 50* mode touches Spotify at all, so they work even with Spotify disconnected or unreachable. That mode degrades to an empty pool and its error screen points at *By Artist* instead.
+
+The server-side rate limiters have no counterpart here (no routes to protect), but **lrclib's burst throttle is still real** — fetch lyrics through the bounded worker pool in `lib/games.ts` (≤5, early-stop), never `Promise.all` over the whole sample.
+
+**One gameplay engine, two games.** `components/multiple-choice-game.tsx` drives Music Quiz and Lyric → Song from a `QuizConfig`; to add another multiple-choice game, write a `load()` returning `Question[]` and point a screen at it — don't fork the component. It differs from the web version in one structural way: web config carries an `endpoint` string to fetch, this one carries the `load()` function itself, which also removes the web version's server-component workaround of passing the icon as a string key. Layout is rebuilt for the phone rather than transcribed — options are one full-width column, not a 2×2 grid.
+
+**The artist picker** (`components/artist-picker.tsx`, shared by Name That Song and Lyric → Song's *By Artist* mode) searches iTunes, not Spotify. Searching the same catalogue that has to supply the round means a result you can pick is a round we can actually build. The cost is the picture: iTunes publishes no artist portraits, so your own top artists keep their real Spotify photo **and their Spotify id**, while a searched artist falls back to their latest album cover, fetched lazily on pick.
+
+That id matters — `get_name_song_leaderboard` groups on `artist_id`, so `saveScore()` attaches the artist **only** when it carries a Spotify one. An iTunes-only artist still scores towards the player's total; it just doesn't join a per-artist board.
+
+**Audio — `expo-audio`** (bundled in Expo Go, so `npm start` still works). The round's clip is handed to `useAudioPlayer()` as its **source**; do not build a player with a null source and push clips in with `player.replace()` later, which throws `Exception in HostFunction`. Letting the hook own the source is the documented path, and it releases the previous native player itself, so a run doesn't accumulate them. For the same reason don't call `preload()` from a component — it's documented as module-scope only, and it feeds the same native preload registry `replace()` consults. The 5s clip window is armed off the player **status** reporting `playing`, not off calling `play()`, which returns long before a remote clip has buffered — otherwise a slow network silently eats the clip. Audio mode is `playsInSilentMode` (the ringer switch shouldn't mute a listening game) plus `interruptionMode: "doNotMix"`, because half-hearing the real track behind the clip would give the answer away.
+
+**Adding a new `game_type` requires updating the `scores.game_type` CHECK constraint in Supabase** — that SQL is not in the repo, it's applied by hand.
 
 ## Auth
 
@@ -81,7 +118,7 @@ Two things must stay in sync or sign-in breaks:
 1. The bridge URL must be in Supabase → Authentication → URL Configuration → **Redirect URLs**. If it isn't, Supabase does not error — it silently discards `redirectTo` and sends the user to the project's Site URL (`localhost:3000`), which on a phone shows *"Safari cannot connect to the server"*. Diagnose by reading the address bar of the failed page.
 2. `EXPO_PUBLIC_*` values are inlined at bundle time, so restart with `npx expo start -c` after changing them.
 
-Env vars in `mobile/.env.local` (gitignored): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_AUTH_BRIDGE`.
+Env vars in `mobile/.env.local` (gitignored): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_AUTH_BRIDGE`, `EXPO_PUBLIC_SPOTIFY_CLIENT_ID`. The Spotify **secret** has no business in this project — if you find yourself wanting it, you're about to reintroduce the confidential flow the PKCE setup exists to avoid.
 
 ## Design system
 
