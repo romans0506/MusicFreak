@@ -17,6 +17,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PullRefreshScroll } from "@/components/pull-refresh";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useSession } from "@/lib/auth";
+import { countryName, flagUrl } from "@/lib/countries";
+import { getArtistEvents, type LiveEvent } from "@/lib/events";
 import { getArtist, getArtistTopTracks, type ArtistFull, type TopTrack } from "@/lib/spotify";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
@@ -54,8 +56,30 @@ type GameLeader = {
 
 const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/;
 
+/** Dates shown before the expander. A long tour is 40+ nights — not a wall. */
+const EVENT_PREVIEW_COUNT = 5;
+
 function avatarOf(p: Fan["profiles"]): string | null {
   return p?.custom_avatar_url ?? p?.avatar_url ?? null;
+}
+
+// Event dates arrive as a bare local "YYYY-MM-DD". new Date() would read that
+// as UTC midnight and shift the day backwards for anyone west of Greenwich, so
+// the parts are read straight off the string.
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+function monthLabel(date: string) {
+  return MONTHS[Number(date.slice(5, 7)) - 1] ?? "";
+}
+
+function dayLabel(date: string) {
+  return String(Number(date.slice(8, 10)));
+}
+
+/** Year, shown only when the date isn't in the current one. */
+function yearLabel(date: string) {
+  const year = date.slice(0, 4);
+  return year === String(new Date().getFullYear()) ? "" : year;
 }
 
 type SymbolName = Parameters<typeof IconSymbol>[0]["name"];
@@ -105,6 +129,8 @@ export default function ArtistDetailScreen() {
   const [tracks, setTracks] = useState<TopTrack[]>([]);
   const [fans, setFans] = useState<Fan[]>([]);
   const [leaders, setLeaders] = useState<GameLeader[]>([]);
+  const [events, setEvents] = useState<LiveEvent[]>([]);
+  const [showAllEvents, setShowAllEvents] = useState(false);
   const [favorited, setFavorited] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -137,14 +163,45 @@ export default function ArtistDetailScreen() {
     load().finally(() => setLoading(false));
   }, [load]);
 
+  // Live dates hang off the artist NAME, which is usually seeded from the route
+  // params and so is here on first paint — hence its own fetch rather than a
+  // branch of load(), which is keyed on the id. Failures leave `events` empty
+  // and the section simply doesn't render.
+  const artistName = artist?.name ?? "";
+  useEffect(() => {
+    if (!artistName || !SPOTIFY_ID.test(artistId ?? "")) return;
+    let alive = true;
+    getArtistEvents(artistId, artistName).then((res) => {
+      if (!alive) return;
+      setEvents(res.events);
+      setShowAllEvents(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [artistId, artistName]);
+
+  const visibleEvents = showAllEvents ? events : events.slice(0, EVENT_PREVIEW_COUNT);
+
+  // Pull-to-refresh path. Separate from the mount effect on purpose: `force`
+  // bypasses the module cache, and setting state from an effect *body* trips
+  // react-hooks/set-state-in-effect, which the .then() above stays clear of.
+  const refreshEvents = useCallback(async () => {
+    if (!artistName || !SPOTIFY_ID.test(artistId ?? "")) return;
+    const res = await getArtistEvents(artistId, artistName, { force: true });
+    setEvents(res.events);
+  }, [artistId, artistName]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await load();
+      // `force` bypasses the events cache — a pull is the user telling us the
+      // data looks wrong, so honouring a stale entry defeats the gesture.
+      await Promise.all([load(), refreshEvents()]);
     } finally {
       setRefreshing(false);
     }
-  }, [load]);
+  }, [load, refreshEvents]);
 
   // Same rules as the web server action (favorite_artists is public-read and the
   // image is rendered for other users, so only https URLs are stored).
@@ -432,6 +489,106 @@ export default function ArtistDetailScreen() {
                 </View>
               )}
             </Animated.View>
+
+            {/* ---------- Live dates (Ticketmaster, via the edge function) ---------- */}
+            {events.length > 0 ? (
+              <Animated.View entering={FadeInDown.delay(110).duration(450)}>
+                <Section icon="calendar" title="Live dates" trailing="via Ticketmaster" />
+                <View>
+                  {visibleEvents.map((event, i) => (
+                    <Pressable
+                      key={event.id}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        if (event.url) Linking.openURL(event.url);
+                      }}
+                      style={({ pressed }) => ({
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 12,
+                        paddingVertical: 10,
+                        borderBottomWidth: i < visibleEvents.length - 1 ? 1 : 0,
+                        borderBottomColor: colors.border,
+                        opacity: pressed ? 0.6 : 1,
+                      })}>
+                      <View
+                        style={{
+                          width: 46,
+                          height: 46,
+                          borderRadius: 12,
+                          borderCurve: "continuous",
+                          backgroundColor: colors.primarySoft,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}>
+                        <Text
+                          style={{
+                            color: colors.primary,
+                            fontSize: 10,
+                            fontWeight: "700",
+                            letterSpacing: 0.6,
+                          }}>
+                          {monthLabel(event.date)}
+                        </Text>
+                        <Text
+                          style={{
+                            color: colors.foreground,
+                            fontSize: 16,
+                            fontWeight: "800",
+                            fontVariant: ["tabular-nums"],
+                          }}>
+                          {dayLabel(event.date)}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text
+                          numberOfLines={1}
+                          style={{ color: colors.foreground, fontSize: 14, fontWeight: "600" }}>
+                          {event.venue ?? event.name}
+                        </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          {event.country ? (
+                            <Image
+                              source={flagUrl(event.country)}
+                              style={{ width: 16, height: 12, borderRadius: 2 }}
+                              contentFit="cover"
+                            />
+                          ) : null}
+                          <Text
+                            numberOfLines={1}
+                            style={{ color: colors.mutedForeground, fontSize: 12, flex: 1 }}>
+                            {[event.city ?? countryName(event.country ?? ""), yearLabel(event.date)]
+                              .filter(Boolean)
+                              .join(" · ")}
+                            {event.time ? ` · ${event.time.slice(0, 5)}` : ""}
+                          </Text>
+                        </View>
+                      </View>
+                      <IconSymbol name="ticket.fill" size={18} color={colors.primary} />
+                    </Pressable>
+                  ))}
+                  {events.length > EVENT_PREVIEW_COUNT ? (
+                    <Pressable
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setShowAllEvents((v) => !v);
+                      }}
+                      style={({ pressed }) => ({
+                        ...cardSurface,
+                        marginTop: 12,
+                        borderRadius: 14,
+                        paddingVertical: 12,
+                        alignItems: "center",
+                        opacity: pressed ? 0.6 : 1,
+                      })}>
+                      <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "600" }}>
+                        {showAllEvents ? "Show less" : `Show all ${events.length} dates`}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </Animated.View>
+            ) : null}
 
             {/* ---------- Name That Song ranking for this artist ---------- */}
             {leaders.length > 0 ? (

@@ -60,6 +60,10 @@ const MAPPING = {
   'moon.fill': 'nightlight-round',
   'star.fill': 'star',
 
+  // Live dates
+  'calendar': 'event',
+  'ticket.fill': 'confirmation-number',
+
   // Social
   'heart.fill': 'favorite',
   'heart': 'favorite-border',

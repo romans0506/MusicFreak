@@ -10,7 +10,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PullRefreshScroll } from "@/components/pull-refresh";
 import { Skeleton } from "@/components/skeleton";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { getTopArtistsFull, type ArtistFull } from "@/lib/spotify";
+import { SpotifyReconnect } from "@/components/spotify-reconnect";
+import { searchArtists } from "@/lib/artist-search";
+import { getTopArtists, type ArtistFull } from "@/lib/spotify";
 import { useSpotifyEpoch } from "@/lib/spotify-auth";
 import { colors } from "@/theme/colors";
 import { typography } from "@/theme/type";
@@ -18,10 +20,12 @@ import { cardSurface } from "@/theme/surfaces";
 
 // Mirrors the web /app/artists page (top 24 artists, medium_term).
 //
-// Deliberate deviation: the web version's search box hits /api/spotify/search,
-// which needs an APP token (client secret) — that can't ship in the app, and a
-// user token gets a 400/403 from /v1/search. So the box filters the artists we
-// already have instead of searching Spotify's catalog, and says so.
+// The search box does two things at once: it filters the artists we already
+// have, and — from two characters — searches Spotify's whole catalog through
+// the `spotify-search` edge function. /v1/search needs the APP token (client
+// secret), which can't ship in a bundle, so the function holds it; see
+// lib/artist-search.ts. Catalog hits carry real Spotify ids, so a searched
+// artist opens the same screen as one of your own.
 //
 // Layout: your #1 artist gets a full-width poster; the rest is a borderless
 // grid where the photos do the work instead of card frames.
@@ -108,6 +112,23 @@ function FeatureArtist({ artist }: { artist: ArtistFull }) {
   );
 }
 
+/** The small uppercase heading over each grid block. */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Text
+      style={{
+        color: colors.mutedForeground,
+        fontSize: 12,
+        fontWeight: "600",
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+        marginBottom: 14,
+      }}>
+      {children}
+    </Text>
+  );
+}
+
 /** Grid tile: photo first, label underneath, no card frame. */
 function ArtistTile({
   artist,
@@ -177,14 +198,19 @@ export default function ArtistsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
+  // Keyed by the query it answers, so a slow response for an old query can't
+  // flash under a newer one — and so "loading" is derivable rather than a
+  // second state set synchronously in the effect below.
+  const [remote, setRemote] = useState<{ q: string; artists: ArtistFull[] }>({ q: "", artists: [] });
 
   const epoch = useSpotifyEpoch();
   const load = useCallback(async () => {
-    const list = await getTopArtistsFull();
+    // `ok` is the only failure signal. An empty list is NOT one: a fresh
+    // Spotify account has no ranked artists yet, and reading empty as "broken
+    // token" showed the error screen to people whose session was fine.
+    const { ok, artists: list } = await getTopArtists();
     setArtists(list);
-    // An empty list here almost always means we have no working Spotify token,
-    // since anyone signed in via Spotify has top artists.
-    setFailed(list.length === 0);
+    setFailed(!ok);
   }, []);
 
   useEffect(() => {
@@ -203,6 +229,23 @@ export default function ArtistsScreen() {
     }
   }, [load]);
 
+  // Catalog search, debounced — every keystroke is an edge-function call and a
+  // Spotify request otherwise, and a 429 on this client_id breaks OAuth login.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      searchArtists(q).then((res) => {
+        if (alive) setRemote({ q, artists: res.artists });
+      });
+    }, 350);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return artists;
@@ -211,7 +254,16 @@ export default function ArtistsScreen() {
     );
   }, [artists, query]);
 
-  const searching = query.trim().length > 0;
+  const trimmed = query.trim();
+  const searching = trimmed.length > 0;
+  // Results count only while they still answer what's in the box.
+  const remoteLoading = trimmed.length >= 2 && remote.q !== trimmed;
+  // The same artist arriving from both sources would render twice.
+  const localIds = useMemo(() => new Set(artists.map((a) => a.id)), [artists]);
+  const remoteOnly = useMemo(
+    () => (remote.q === trimmed ? remote.artists.filter((a) => !localIds.has(a.id)) : []),
+    [remote, trimmed, localIds],
+  );
   // Three columns, 20pt outer padding, 12pt gutters.
   const tileSize = (width - 40 - 24) / 3;
   // The poster only makes sense when we're showing the real ranking.
@@ -269,7 +321,7 @@ export default function ArtistsScreen() {
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Filter by name or genre"
+              placeholder="Search any artist"
               placeholderTextColor={colors.mutedForeground}
               autoCapitalize="none"
               autoCorrect={false}
@@ -293,8 +345,23 @@ export default function ArtistsScreen() {
             <Text style={{ color: colors.mutedForeground, fontSize: 13, textAlign: "center" }}>
               Your Spotify session may have expired. Pull to refresh, or sign out and back in.
             </Text>
+            {/* Self-hides unless the connection is genuinely dead. */}
+            <View style={{ alignSelf: "stretch", marginTop: 8 }}>
+              <SpotifyReconnect />
+            </View>
           </View>
-        ) : filtered.length === 0 ? (
+        ) : !searching && artists.length === 0 ? (
+          <View style={{ alignItems: "center", gap: 8, paddingVertical: 60, paddingHorizontal: 40 }}>
+            <IconSymbol name="music.mic" size={30} color={colors.mutedForeground} />
+            <Text style={{ color: colors.foreground, fontSize: 16, fontWeight: "600" }}>
+              No top artists yet
+            </Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 13, textAlign: "center" }}>
+              Spotify needs a few days of listening before it ranks your artists. Keep playing and
+              they&apos;ll show up here.
+            </Text>
+          </View>
+        ) : filtered.length === 0 && remoteOnly.length === 0 && !remoteLoading ? (
           <View style={{ alignItems: "center", gap: 8, paddingVertical: 60 }}>
             <IconSymbol name="magnifyingglass" size={28} color={colors.mutedForeground} />
             <Text style={{ color: colors.foreground, fontSize: 16, fontWeight: "600" }}>
@@ -306,27 +373,56 @@ export default function ArtistsScreen() {
           <>
             {feature ? <FeatureArtist artist={feature} /> : null}
 
-            <View style={{ paddingHorizontal: 20, marginTop: feature ? 22 : 0 }}>
-              <Text
-                style={{
-                  color: colors.mutedForeground,
-                  fontSize: 12,
-                  fontWeight: "600",
-                  letterSpacing: 0.8,
-                  textTransform: "uppercase",
-                  marginBottom: 14,
-                }}>
-                {searching
-                  ? `${filtered.length} match${filtered.length === 1 ? "" : "es"}`
-                  : "The rest of your month"}
-              </Text>
+            {gridArtists.length > 0 ? (
+              <View style={{ paddingHorizontal: 20, marginTop: feature ? 22 : 0 }}>
+                <SectionLabel>
+                  {searching
+                    ? `${filtered.length} in your artists`
+                    : "The rest of your month"}
+                </SectionLabel>
 
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-                {gridArtists.map((artist, i) => (
-                  <ArtistTile key={artist.id} artist={artist} index={i} size={tileSize} />
-                ))}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                  {gridArtists.map((artist, i) => (
+                    <ArtistTile key={artist.id} artist={artist} index={i} size={tileSize} />
+                  ))}
+                </View>
               </View>
-            </View>
+            ) : null}
+
+            {/* Catalog results — artists you've never played. Shown second:
+                what you listen to is the more likely target of a search. */}
+            {searching ? (
+              <View
+                style={{
+                  paddingHorizontal: 20,
+                  marginTop: gridArtists.length > 0 ? 28 : 0,
+                }}>
+                <SectionLabel>
+                  {remoteLoading && remoteOnly.length === 0 ? "Searching Spotify…" : "More on Spotify"}
+                </SectionLabel>
+
+                {remoteOnly.length > 0 ? (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                    {remoteOnly.map((artist, i) => (
+                      <ArtistTile key={artist.id} artist={artist} index={i} size={tileSize} />
+                    ))}
+                  </View>
+                ) : remoteLoading ? (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <View key={i} style={{ gap: 8 }}>
+                        <Skeleton width={tileSize} height={tileSize} radius={14} />
+                        <Skeleton width={tileSize * 0.7} height={11} radius={4} />
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>
+                    Nothing else on Spotify for that.
+                  </Text>
+                )}
+              </View>
+            ) : null}
           </>
         )}
       </PullRefreshScroll>

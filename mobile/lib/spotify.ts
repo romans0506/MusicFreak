@@ -27,18 +27,32 @@ async function userToken(): Promise<string | null> {
   return session?.provider_token ?? null;
 }
 
-async function me<T>(path: string): Promise<T | null> {
+/**
+ * `ok` says whether Spotify actually answered — the difference between "no
+ * token / request failed" and "answered, and the answer is empty". Callers that
+ * render an error need it: a new account genuinely has an empty top-artists
+ * list, and treating that as a dead token showed a scary error on a fine
+ * session.
+ */
+type MeResult<T> = { ok: boolean; data: T | null };
+
+async function meResult<T>(path: string): Promise<MeResult<T>> {
   const token = await userToken();
-  if (!token) return null;
+  if (!token) return { ok: false, data: null };
   try {
     const res = await fetch(`https://api.spotify.com/v1${path}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.status === 204 || !res.ok) return null;
-    return (await res.json()) as T;
+    if (res.status === 204) return { ok: true, data: null };
+    if (!res.ok) return { ok: false, data: null };
+    return { ok: true, data: (await res.json()) as T };
   } catch {
-    return null;
+    return { ok: false, data: null };
   }
+}
+
+async function me<T>(path: string): Promise<T | null> {
+  return (await meResult<T>(path)).data;
 }
 
 export type NowPlaying = {
@@ -181,8 +195,28 @@ function toArtistFull(a: any): ArtistFull {
  * /v1/search, which omits followers for development-mode apps).
  */
 export async function getTopArtistsFull(limit = 24): Promise<ArtistFull[]> {
-  const d = await me<any>(`/me/top/artists?limit=${limit}&time_range=medium_term`);
-  return (d?.items ?? []).map(toArtistFull);
+  return (await getTopArtists(limit)).artists;
+}
+
+/**
+ * The same list plus whether Spotify answered, for the Artists tab's error
+ * state. Empty is NOT a failure: `medium_term` covers roughly six months, so a
+ * fresh Spotify account has nothing there yet — hence the `short_term` retry
+ * before we report an empty list.
+ */
+export async function getTopArtists(
+  limit = 24,
+): Promise<{ ok: boolean; artists: ArtistFull[] }> {
+  const medium = await meResult<any>(`/me/top/artists?limit=${limit}&time_range=medium_term`);
+  if (!medium.ok) return { ok: false, artists: [] };
+
+  let items: any[] = medium.data?.items ?? [];
+  if (items.length === 0) {
+    const short = await meResult<any>(`/me/top/artists?limit=${limit}&time_range=short_term`);
+    if (!short.ok) return { ok: false, artists: [] };
+    items = short.data?.items ?? [];
+  }
+  return { ok: true, artists: items.map(toArtistFull) };
 }
 
 /**

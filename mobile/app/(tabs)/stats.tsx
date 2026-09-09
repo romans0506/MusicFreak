@@ -213,6 +213,8 @@ function bucketHours(rows: Stamp[], sinceMs: number): number[] {
 async function fetchStats(): Promise<StatsData> {
   const tz = deviceTimeZone();
   const now = Date.now();
+  // Local read, no network — used to scope the favourites count below.
+  const uid = (await supabase.auth.getSession()).data.session?.user.id;
   const dayAgo = new Date(now - 86_400_000).toISOString();
   const weekAgo = new Date(now - 7 * 86_400_000).toISOString();
   const monthAgo = new Date(now - 30 * 86_400_000).toISOString();
@@ -254,7 +256,16 @@ async function fetchStats(): Promise<StatsData> {
       .gte("played_at", monthAgo)
       .order("played_at", { ascending: false })
       .limit(STAMP_LIMIT),
-    supabase.from("favorite_artists").select("artist_id", { count: "exact", head: true }),
+    // MUST be scoped to the user. `favorite_artists` is public-read (the artist
+    // page lists a band's fans), so RLS does NOT narrow this to the caller — an
+    // unfiltered count returns every user's rows, which handed the Superfan
+    // badge to brand-new accounts. Same fix on the web stats page.
+    uid
+      ? supabase
+          .from("favorite_artists")
+          .select("artist_id", { count: "exact", head: true })
+          .eq("user_id", uid)
+      : Promise.resolve({ count: 0 }),
     getTopGenres(),
     supabase.rpc("get_listening_minutes"),
   ]);

@@ -76,6 +76,7 @@ export default async function StatsPage() {
   const monthAgo = new Date(now - 30 * 86_400_000).toISOString()
 
   const { data: { session } } = await supabase.auth.getSession()
+  const uid = session?.user.id
 
   const [week, month, all, totalPlays, { data: days }, { data: hours }, { count: favArtists }, genres, { data: minutesRows }] = await Promise.all([
     counts(supabase, weekAgo),
@@ -84,7 +85,16 @@ export default async function StatsPage() {
     totalPlayCount(supabase),
     supabase.rpc("get_play_days", { p_tz: "UTC" }),
     supabase.rpc("get_play_hours", { p_tz: "UTC" }),
-    supabase.from("favorite_artists").select("artist_id", { count: "exact", head: true }),
+    // MUST be scoped to the user. `favorite_artists` is public-read (the artist
+    // page lists a band's fans), so RLS does NOT narrow this to the caller — an
+    // unfiltered count returns every user's rows and handed the Superfan badge
+    // to accounts that had favourited nothing. Same fix in the Expo app.
+    uid
+      ? supabase
+          .from("favorite_artists")
+          .select("artist_id", { count: "exact", head: true })
+          .eq("user_id", uid)
+      : Promise.resolve({ count: 0 }),
     topGenres(session),
     supabase.rpc("get_listening_minutes"),
   ])

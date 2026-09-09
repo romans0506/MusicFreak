@@ -306,11 +306,6 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
               ) : null}
-              {joined ? (
-                <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
-                  Joined {joined}
-                </Text>
-              ) : null}
             </View>
           </View>
         </Animated.View>
@@ -448,14 +443,22 @@ export default function ProfileScreen() {
             {/* Spotify stats (Now Playing / Recently Played / Top …) */}
             <AnimatedSpotifyStats refreshKey={spotifyRefresh} />
 
-            {/* Sign out */}
-            <Pressable
-              onPress={signOut}
-              style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.97 : 1 }] })}>
-              <Surface radius={18} glow={false} contentStyle={{ paddingVertical: 15, alignItems: "center" }}>
-                <Text style={{ color: colors.red, fontSize: 16, fontWeight: "600" }}>Sign out</Text>
-              </Surface>
-            </Pressable>
+            {/* Sign out, with the join date as the quiet footer under it. */}
+            <View style={{ gap: 12 }}>
+              <Pressable
+                onPress={signOut}
+                style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.97 : 1 }] })}>
+                <Surface radius={18} glow={false} contentStyle={{ paddingVertical: 15, alignItems: "center" }}>
+                  <Text style={{ color: colors.red, fontSize: 16, fontWeight: "600" }}>Sign out</Text>
+                </Surface>
+              </Pressable>
+              {joined ? (
+                <Text
+                  style={{ color: colors.mutedForeground, fontSize: 12, textAlign: "center" }}>
+                  Joined {joined}
+                </Text>
+              ) : null}
+            </View>
           </Animated.View>
         )}
       </PullRefreshScroll>
