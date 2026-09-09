@@ -268,3 +268,58 @@ export async function getTopTrackSongs(): Promise<LyricSong[]> {
     artist: t.artists?.[0]?.name ?? "",
   }));
 }
+
+/** A track we know enough about to store as a favourite. */
+export type CatalogTrack = {
+  id: string;
+  name: string;
+  artists: string;
+  albumArt: string | null;
+  /** Spotify artist ids — favorite_songs.artist_ids powers artist-page counts. */
+  artistIds: string[];
+};
+
+/**
+ * The pool of songs you can favourite from the device.
+ *
+ * The web app favourites straight out of Spotify's catalogue search, which the
+ * device cannot reach: /v1/search needs the app token. So instead of a catalogue
+ * we offer everything Spotify will tell us about *your* listening — recently
+ * played plus your top tracks across all three ranges. Those are /v1/me/...
+ * endpoints, they answer a user token, and crucially they return full track
+ * objects, so each favourite carries real Spotify track and artist ids and stays
+ * compatible with the web app and the artist pages' "Loved by" counts.
+ *
+ * The trade-off is honest and worth stating in the UI: you can favourite
+ * anything you have listened to, not anything that exists.
+ */
+export async function getFavoritableTracks(): Promise<CatalogTrack[]> {
+  const [recent, shortTerm, mediumTerm, longTerm] = await Promise.all([
+    me<any>("/me/player/recently-played?limit=50"),
+    me<any>("/me/top/tracks?limit=50&time_range=short_term"),
+    me<any>("/me/top/tracks?limit=50&time_range=medium_term"),
+    me<any>("/me/top/tracks?limit=50&time_range=long_term"),
+  ]);
+
+  const seen = new Set<string>();
+  const out: CatalogTrack[] = [];
+
+  function add(t: any) {
+    if (!t?.id || seen.has(t.id)) return;
+    seen.add(t.id);
+    out.push({
+      id: t.id,
+      name: t.name,
+      artists: (t.artists ?? []).map((a: any) => a.name).join(", "),
+      albumArt: t.album?.images?.[0]?.url ?? null,
+      artistIds: (t.artists ?? []).map((a: any) => a.id).filter(Boolean),
+    });
+  }
+
+  // Recently played first — the most likely thing you came here to favourite.
+  for (const item of recent?.items ?? []) add(item.track);
+  for (const data of [shortTerm, mediumTerm, longTerm]) {
+    for (const track of data?.items ?? []) add(track);
+  }
+  return out;
+}

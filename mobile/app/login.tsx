@@ -10,13 +10,18 @@ export default function LoginScreen() {
   const { signIn } = useSession();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
+  // Failures used to go to console.warn only, so a user stuck on this screen saw
+  // nothing at all and had no way to tell us what went wrong.
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSignIn() {
     try {
       setBusy(true);
+      setError(null);
       await signIn();
     } catch (e) {
       console.warn("Sign-in failed", e);
+      setError(e instanceof Error ? e.message : "Sign-in failed. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -107,6 +112,19 @@ export default function LoginScreen() {
               </Text>
             )}
           </Pressable>
+
+          {error ? (
+            <Animated.Text
+              entering={FadeIn}
+              style={{
+                color: "#ffb4b4",
+                fontSize: 13,
+                textAlign: "center",
+                lineHeight: 18,
+              }}>
+              {error}
+            </Animated.Text>
+          ) : null}
 
           <Animated.Text
             entering={FadeIn.delay(600)}

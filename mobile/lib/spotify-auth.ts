@@ -207,6 +207,12 @@ export async function connectSpotify(): Promise<boolean> {
     state,
   });
 
+  // Deliberately NOT show_dialog here. This runs right after the Supabase
+  // sign-in has already put the user through Spotify's approval screen for the
+  // same client_id and scopes, so a second prompt would be pure friction — the
+  // silent redirect is what makes the two-authorization flow feel like one.
+  // The account choice happens in the first one (see lib/auth.tsx).
+
   const result = await WebBrowser.openAuthSessionAsync(`${AUTHORIZE_URL}?${params}`, appReturn);
   if (result.type !== "success") return false; // cancelled or dismissed
 

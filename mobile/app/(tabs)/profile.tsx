@@ -85,6 +85,11 @@ async function fetchStats(userId: string): Promise<Stats> {
     rank,
     mostPlayed: (mostPlayed ?? []) as MostPlayed[],
     minutesTotal: Math.floor(Number(m?.total_ms ?? 0) / 60000),
+    // NOTE: this is get_listening_minutes' own week, whose windowing (calendar
+    // vs rolling, and in which timezone) isn't in the repo. The Stats screen no
+    // longer trusts it — it sums a rolling 7 days from play_history so both
+    // halves of its hero describe the same window — so if that RPC turns out to
+    // use calendar weeks, this figure and the Stats Week page will disagree.
     minutesWeek: Math.floor(Number(m?.week_ms ?? 0) / 60000),
     profile: (profile ?? null) as ProfileRow | null,
   };
@@ -104,6 +109,8 @@ export default function ProfileScreen() {
   // pull refreshed the Supabase numbers and left the Spotify block untouched —
   // which is the one part of this screen a pull is most likely aimed at.
   const [spotifyRefresh, setSpotifyRefresh] = useState(0);
+  /** Bumped on open so the edit sheet remounts with fresh values — see below. */
+  const [editSeed, setEditSeed] = useState(0);
 
   // Local overrides applied immediately after an edit so the UI updates without
   // a refetch (the stats refetch still happens in the background on pull).
@@ -151,10 +158,17 @@ export default function ProfileScreen() {
   const p = stats?.profile;
   const displayName = override?.username || p?.username || spotifyName;
   const bio = override?.bio ?? p?.bio ?? "";
-  const avatarUrl =
-    override?.avatarUrl ?? p?.custom_avatar_url ?? p?.avatar_url ?? spotifyAvatar ?? null;
-  const bannerUrl = override?.bannerUrl ?? p?.banner_url ?? null;
-  const country = override?.country ?? p?.country ?? null;
+  // `override` is all-or-nothing: once an edit has been saved it is the truth
+  // for every field it carries. Using `??` per field would make "the user
+  // removed their photo" (null) indistinguishable from "not edited", so a
+  // removal would immediately reappear from the stale row underneath.
+  const customAvatar = override ? override.avatarUrl : (p?.custom_avatar_url ?? null);
+  const bannerUrl = override ? override.bannerUrl : (p?.banner_url ?? null);
+  const country = override ? override.country : (p?.country ?? null);
+  // Displayed avatar follows the app-wide precedence: custom, then Spotify's,
+  // then initials. The editor edits only the custom layer.
+  const spotifyAvatarUrl = p?.avatar_url ?? spotifyAvatar ?? null;
+  const avatarUrl = customAvatar ?? spotifyAvatarUrl;
 
   const joined = user?.created_at
     ? new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(
@@ -196,7 +210,14 @@ export default function ProfileScreen() {
           />
           {/* Edit pill */}
           <Pressable
-            onPress={() => setEditing(true)}
+            onPress={() => {
+              // Guard as well as re-seed: opening before `load()` resolves would
+              // seed the sheet from an empty profile row.
+              if (loading) return;
+              setEditSeed((n) => n + 1);
+              setEditing(true);
+            }}
+            disabled={loading}
             hitSlop={8}
             style={({ pressed }) => ({
               position: "absolute",
@@ -346,7 +367,7 @@ export default function ProfileScreen() {
             ) : null}
 
             {/* Favorite songs (Supabase) */}
-            {userId ? <FavoriteSongs userId={userId} /> : null}
+            {userId ? <FavoriteSongs /> : null}
 
             {/* Most played */}
             {stats && stats.mostPlayed.length > 0 ? (
@@ -441,13 +462,20 @@ export default function ProfileScreen() {
 
       {userId ? (
         <EditProfileSheet
+          // Remounts on every open so its fields re-seed from current data.
+          // Without this the sheet keeps whatever `initial` held on the profile
+          // screen's FIRST render — which, straight after a login, is before the
+          // profile row has loaded. Saving then wrote those empty values back
+          // and wiped the user's avatar and banner.
+          key={editSeed}
           visible={editing}
           onClose={() => setEditing(false)}
           userId={userId}
           initial={{
             username: override?.username || p?.username || spotifyName,
             bio: override?.bio ?? p?.bio ?? "",
-            avatarUrl,
+            avatarUrl: customAvatar,
+            fallbackAvatarUrl: spotifyAvatarUrl,
             bannerUrl,
             country,
           }}

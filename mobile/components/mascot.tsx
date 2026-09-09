@@ -15,7 +15,14 @@ import { colors } from "@/theme/colors";
  * Vectors rather than a PNG so it stays crisp at any size. Every tone is in the
  * black family, separated only by luminance and lifted just far enough off
  * `background` (#121212) to read on it — that's what keeps him a silhouette
- * rather than a cartoon at 64pt. The shades and mouth are the only colour.
+ * rather than a cartoon at 64pt. The shades and mouth are the only colour —
+ * which is why the padlock below is drawn in the black family too, even though
+ * an accent lock would be louder.
+ *
+ * `mood` and `lock` exist for the Stats period pager, where a period with no
+ * plays gets a sad Freak and a period you haven't reached yet gets him holding
+ * a padlock. Both keep the same gripping pose, so he still needs an edge to
+ * hang from — see components/mascot-note.tsx.
  */
 
 const BODY = "#2c2c32"; // head, ears, hands, arms
@@ -26,10 +33,16 @@ const BANDANA = "#45454f"; // lightest, so the strip across the forehead reads
 export function Mascot({
   size = 64,
   accent = colors.primary,
+  mood = "deadpan",
+  lock = false,
 }: {
   size?: number;
   /** Shades and mouth — the only colour on him. */
   accent?: string;
+  /** "sad" turns the deadpan line into a frown. */
+  mood?: "deadpan" | "sad";
+  /** Draws a padlock hanging between his fists, on the edge he's gripping. */
+  lock?: boolean;
 }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100">
@@ -72,8 +85,35 @@ export function Mascot({
       <Rect x={29} y={63} width={18} height={11} rx={4} fill={accent} />
       <Rect x={53} y={63} width={18} height={11} rx={4} fill={accent} />
       <Rect x={46.5} y={66} width={7} height={3.5} rx={1.75} fill={accent} />
-      {/* Deadpan, not a grin. */}
-      <Path d="M45 81 L57 78" stroke={accent} strokeWidth={3} strokeLinecap="round" fill="none" />
+      {/* Deadpan, not a grin — or an actual frown when there's nothing to report. */}
+      {mood === "sad" ? (
+        <Path
+          d="M43.5 82.5 Q50 76.5 56.5 82.5"
+          stroke={accent}
+          strokeWidth={3}
+          strokeLinecap="round"
+          fill="none"
+        />
+      ) : (
+        <Path d="M45 81 L57 78" stroke={accent} strokeWidth={3} strokeLinecap="round" fill="none" />
+      )}
+
+      {/* Padlock, in the gap between his fists and below the jaw. Its body runs
+          to the bottom of the viewBox so it sits on the same edge his fingers
+          wrap over, rather than floating. */}
+      {lock ? (
+        <>
+          <Path
+            d="M45 92 V88 A5 5 0 0 1 55 88 V92"
+            stroke={BANDANA}
+            strokeWidth={3}
+            fill="none"
+            strokeLinecap="round"
+          />
+          <Rect x={41} y={91} width={18} height={11} rx={3} fill={BAND} />
+          <Circle cx={50} cy={96} r={2} fill={BANDANA} />
+        </>
+      ) : null}
     </Svg>
   );
 }

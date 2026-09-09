@@ -32,6 +32,7 @@ const MAPPING = {
   'checkmark': 'check',
   'magnifyingglass': 'search',
   'pencil': 'edit',
+  'plus': 'add',
   'paperplane.fill': 'send',
 
   // Tab bar
