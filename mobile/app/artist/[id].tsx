@@ -21,7 +21,7 @@ import { countryName, flagUrl } from "@/lib/countries";
 import { getArtistEvents, type LiveEvent } from "@/lib/events";
 import { getArtist, getArtistTopTracks, type ArtistFull, type TopTrack } from "@/lib/spotify";
 import { supabase } from "@/lib/supabase";
-import { colors } from "@/theme/colors";
+import { colors, scrim } from "@/theme/colors";
 import { typography } from "@/theme/type";
 import { cardSurface } from "@/theme/surfaces";
 
@@ -56,16 +56,16 @@ type GameLeader = {
 
 const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/;
 
-/** Dates shown before the expander. A long tour is 40+ nights — not a wall. */
+/** Dates shown before the "show all" expander. */
 const EVENT_PREVIEW_COUNT = 5;
 
 function avatarOf(p: Fan["profiles"]): string | null {
   return p?.custom_avatar_url ?? p?.avatar_url ?? null;
 }
 
-// Event dates arrive as a bare local "YYYY-MM-DD". new Date() would read that
-// as UTC midnight and shift the day backwards for anyone west of Greenwich, so
-// the parts are read straight off the string.
+// Event dates are bare local "YYYY-MM-DD" strings. new Date() would treat them
+// as UTC midnight and shift the day for anyone west of Greenwich, so read the
+// parts off the string.
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 function monthLabel(date: string) {
@@ -163,10 +163,9 @@ export default function ArtistDetailScreen() {
     load().finally(() => setLoading(false));
   }, [load]);
 
-  // Live dates hang off the artist NAME, which is usually seeded from the route
-  // params and so is here on first paint — hence its own fetch rather than a
-  // branch of load(), which is keyed on the id. Failures leave `events` empty
-  // and the section simply doesn't render.
+  // Live dates key on the artist name, which is seeded from the route params
+  // and so available on first paint — hence a separate fetch from load().
+  // Failures leave `events` empty and the section doesn't render.
   const artistName = artist?.name ?? "";
   useEffect(() => {
     if (!artistName || !SPOTIFY_ID.test(artistId ?? "")) return;
@@ -183,9 +182,7 @@ export default function ArtistDetailScreen() {
 
   const visibleEvents = showAllEvents ? events : events.slice(0, EVENT_PREVIEW_COUNT);
 
-  // Pull-to-refresh path. Separate from the mount effect on purpose: `force`
-  // bypasses the module cache, and setting state from an effect *body* trips
-  // react-hooks/set-state-in-effect, which the .then() above stays clear of.
+  // Pull-to-refresh path: `force` bypasses the module cache.
   const refreshEvents = useCallback(async () => {
     if (!artistName || !SPOTIFY_ID.test(artistId ?? "")) return;
     const res = await getArtistEvents(artistId, artistName, { force: true });
@@ -278,7 +275,7 @@ export default function ArtistDetailScreen() {
           borderRadius: 999,
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "rgba(18,18,18,0.6)",
+          backgroundColor: scrim(0.6),
           opacity: pressed ? 0.6 : 1,
         })}>
         <IconSymbol name="chevron.left" size={20} color={colors.foreground} />
@@ -302,9 +299,9 @@ export default function ArtistDetailScreen() {
               />
               <LinearGradient
                 colors={[
-                  "rgba(18,18,18,0.55)",
-                  "rgba(18,18,18,0.15)",
-                  "rgba(18,18,18,0.85)",
+                  scrim(0.55),
+                  scrim(0.15),
+                  scrim(0.85),
                   colors.background,
                 ]}
                 locations={[0, 0.35, 0.82, 1]}
@@ -490,7 +487,7 @@ export default function ArtistDetailScreen() {
               )}
             </Animated.View>
 
-            {/* ---------- Live dates (Ticketmaster, via the edge function) ---------- */}
+            {/* ---------- Live dates (Ticketmaster) ---------- */}
             {events.length > 0 ? (
               <Animated.View entering={FadeInDown.delay(110).duration(450)}>
                 <Section icon="calendar" title="Live dates" trailing="via Ticketmaster" />

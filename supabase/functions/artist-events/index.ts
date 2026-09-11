@@ -1,24 +1,15 @@
 // Supabase Edge Function (Deno) — upcoming Ticketmaster shows for an artist.
 //
-// Why this exists: the Expo app can't hold the Ticketmaster key. Anything Expo
-// inlines must be prefixed EXPO_PUBLIC_, and everything it inlines ships inside
-// the bundle where it can be read straight out of the .apk/.ipa — a leaked key
-// is someone else's 5000 requests/day. So the key lives in Supabase's secrets
-// and the phone calls this with the session it already has.
+// The mobile app can't hold the Ticketmaster key (anything Expo inlines ships
+// in the bundle), so the key lives in Supabase secrets and the phone calls
+// this with its session.
 //
-// This is a port of src/lib/ticketmaster.ts, not a shared module: that file is
-// Next.js/Node and this runs on Deno. Keep the two in sync — especially the
-// Spotify-id matching, which is the part that stops us showing a tribute act's
-// tour on the real band's page.
+// Port of src/lib/ticketmaster.ts — Deno can't import from the Next.js tree.
+// Keep the two in sync, especially the Spotify-id matching.
 //
-// DEPLOY (not automatic — same manual workflow as the SQL):
-//   1. Supabase Dashboard → Edge Functions → Deploy a new function
-//      → name it exactly `artist-events`, paste this file, deploy.
-//      (Or, with the CLI: `supabase functions deploy artist-events`.)
-//   2. Edge Functions → Secrets → add TICKETMASTER_API_KEY.
-//   3. Leave "Verify JWT" ON. That's the whole auth story: Supabase rejects
-//      callers without a valid session before this code ever runs, so the
-//      shared daily quota can't be spent by anonymous traffic.
+// Deploy: `supabase functions deploy artist-events`, then add
+// TICKETMASTER_API_KEY under Edge Functions → Secrets. Keep "Verify JWT" on;
+// it is the only auth gate, and the daily quota is shared by everyone.
 
 const TM_BASE = "https://app.ticketmaster.com/discovery/v2";
 
@@ -116,11 +107,9 @@ function pickImage(images: TmImage[] | undefined): string | null {
 }
 
 /**
- * One night at one venue comes back as several listings — a suite/presale link
- * on another domain, the main Ticketmaster page, a "2-day ticket" package.
- * Metallica's 40 raw rows are 17 actual shows, so without this the list reads
- * "Oct 1, Oct 1, Oct 1, Oct 3, Oct 3…". Keep one row per date+venue, preferring
- * a ticketmaster.com URL and a real start time over a TBA package.
+ * One night at one venue often comes back as several listings (presale link,
+ * main event page, multi-day package). Keep one row per date+venue, preferring
+ * a ticketmaster.com URL with a real start time over a TBA package.
  */
 function listingScore(e: LiveEvent): number {
   return (e.url.includes("ticketmaster.") ? 2 : 0) + (e.time ? 1 : 0);
@@ -156,9 +145,8 @@ async function resolveAttractionId(
     classificationName: "music",
     size: "10",
   });
-  // Never cache a failed request as a miss — one blip would hide the artist.
-  // `ok: false` also stops the caller writing an empty event list, which is the
-  // same bug one layer up.
+  // Don't cache a failed request as a miss; `ok: false` also tells the caller
+  // not to cache an empty event list for it.
   if (!data) return { ok: false, id: cached?.id ?? null };
 
   const candidates: TmAttraction[] = data._embedded?.attractions ?? [];
@@ -184,11 +172,9 @@ async function getArtistEvents(spotifyArtistId: string, artistName: string): Pro
   if (cached && cached.expiresAt > Date.now()) return cached.events;
 
   const attraction = await resolveAttractionId(spotifyArtistId, artistName);
-  // Lookup failed → serve whatever we have and write nothing down. Caching this
-  // as "no upcoming shows" is what hid a touring artist for 30 minutes after a
-  // single blip.
+  // Lookup failed: serve what we have, cache nothing.
   if (!attraction.ok) return cached?.events ?? [];
-  // Answered, and this artist genuinely isn't on Ticketmaster.
+  // Answered, and the artist isn't on Ticketmaster.
   if (!attraction.id) {
     eventsCache.set(spotifyArtistId, { events: [], expiresAt: Date.now() + EVENTS_EMPTY_TTL_MS });
     return [];
@@ -197,8 +183,7 @@ async function getArtistEvents(spotifyArtistId: string, artistName: string): Pro
   const data = await tmFetch("events.json", {
     attractionId: attraction.id,
     sort: "date,asc",
-    // Listings, not shows — dedupe collapses them ~2:1, so this has to be
-    // generous or long tours get truncated before they're counted.
+    // Listings, not shows — dedupe collapses them ~2:1, so fetch generously.
     size: "100",
     classificationName: "music",
   });

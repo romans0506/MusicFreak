@@ -1,4 +1,4 @@
-import { getSpotifyToken } from "@/lib/spotify-auth";
+import { getSpotifyToken, noteSpotify429, spotifyCooldown } from "@/lib/spotify-auth";
 import { supabase } from "@/lib/supabase";
 
 // Personal Spotify data (/v1/me/...) only — the reliable surface for a user
@@ -18,6 +18,11 @@ async function userToken(): Promise<string | null> {
   const token = await getSpotifyToken();
   if (token) return token;
 
+  // A cool-down means "stop talking to Spotify". Without this, the fallback
+  // below would route around it: getSpotifyToken() returns null while
+  // rate-limited, and callers would silently switch to the stale provider_token.
+  if (spotifyCooldown() > 0) return null;
+
   // Fallback for the gap between signing in and the PKCE connection being
   // made — and for anyone still carrying a session from before it existed.
   // Valid for about an hour after login and never renewed, hence the PKCE flow.
@@ -28,26 +33,47 @@ async function userToken(): Promise<string | null> {
 }
 
 /**
- * `ok` says whether Spotify actually answered — the difference between "no
- * token / request failed" and "answered, and the answer is empty". Callers that
- * render an error need it: a new account genuinely has an empty top-artists
- * list, and treating that as a dead token showed a scary error on a fine
- * session.
+ * `ok` distinguishes "request failed" from "answered with an empty result" —
+ * a new account legitimately has no top artists, and that isn't an error.
+ * `status` says why it failed; each cause needs different UI copy.
  */
-type MeResult<T> = { ok: boolean; data: T | null };
+export type FailStatus =
+  /** No token at all: never connected, disconnected, or in a 429 cool-down. */
+  | 0
+  /** Network error / offline — the request never completed. */
+  | -1
+  /** Any HTTP status Spotify returned (401, 403, 429, 5xx…). */
+  | number;
+
+type MeResult<T> = { ok: boolean; data: T | null; status: FailStatus };
 
 async function meResult<T>(path: string): Promise<MeResult<T>> {
+  // Check the cool-down first: no request, no token work, no log noise.
+  if (spotifyCooldown() > 0) return { ok: false, data: null, status: 429 };
+
   const token = await userToken();
-  if (!token) return { ok: false, data: null };
+  if (!token) {
+    console.warn(`[spotify] ${path} — no token available (not connected, or cooling down from a 429)`);
+    return { ok: false, data: null, status: 0 };
+  }
   try {
     const res = await fetch(`https://api.spotify.com/v1${path}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.status === 204) return { ok: true, data: null };
-    if (!res.ok) return { ok: false, data: null };
-    return { ok: true, data: (await res.json()) as T };
-  } catch {
-    return { ok: false, data: null };
+    if (res.status === 204) return { ok: true, data: null, status: 204 };
+    if (!res.ok) {
+      // A 429 here shares the client_id with OAuth login, so it has to stop
+      // the whole app talking to Spotify, not just this request.
+      if (res.status === 429) noteSpotify429(res.headers.get("retry-after"));
+      // Spotify puts a readable reason in the body — worth having in the log.
+      const detail = await res.text().catch(() => "");
+      console.warn(`[spotify] ${path} → HTTP ${res.status} ${detail.slice(0, 200)}`);
+      return { ok: false, data: null, status: res.status };
+    }
+    return { ok: true, data: (await res.json()) as T, status: res.status };
+  } catch (err) {
+    console.warn(`[spotify] ${path} — request threw`, err);
+    return { ok: false, data: null, status: -1 };
   }
 }
 
@@ -206,17 +232,17 @@ export async function getTopArtistsFull(limit = 24): Promise<ArtistFull[]> {
  */
 export async function getTopArtists(
   limit = 24,
-): Promise<{ ok: boolean; artists: ArtistFull[] }> {
+): Promise<{ ok: boolean; artists: ArtistFull[]; status: FailStatus }> {
   const medium = await meResult<any>(`/me/top/artists?limit=${limit}&time_range=medium_term`);
-  if (!medium.ok) return { ok: false, artists: [] };
+  if (!medium.ok) return { ok: false, artists: [], status: medium.status };
 
   let items: any[] = medium.data?.items ?? [];
   if (items.length === 0) {
     const short = await meResult<any>(`/me/top/artists?limit=${limit}&time_range=short_term`);
-    if (!short.ok) return { ok: false, artists: [] };
+    if (!short.ok) return { ok: false, artists: [], status: short.status };
     items = short.data?.items ?? [];
   }
-  return { ok: true, artists: items.map(toArtistFull) };
+  return { ok: true, artists: items.map(toArtistFull), status: 200 };
 }
 
 /**

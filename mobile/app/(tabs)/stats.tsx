@@ -31,7 +31,7 @@ import { getTopGenres, type GenreSlice } from "@/lib/spotify";
 import { useSpotifyEpoch } from "@/lib/spotify-auth";
 import { computeBadges, computeStreak, type Badge, type BadgeId } from "@/lib/stats";
 import { supabase } from "@/lib/supabase";
-import { colors } from "@/theme/colors";
+import { colors, scrim } from "@/theme/colors";
 import { typography } from "@/theme/type";
 import { cardSurface } from "@/theme/surfaces";
 
@@ -256,10 +256,8 @@ async function fetchStats(): Promise<StatsData> {
       .gte("played_at", monthAgo)
       .order("played_at", { ascending: false })
       .limit(STAMP_LIMIT),
-    // MUST be scoped to the user. `favorite_artists` is public-read (the artist
-    // page lists a band's fans), so RLS does NOT narrow this to the caller — an
-    // unfiltered count returns every user's rows, which handed the Superfan
-    // badge to brand-new accounts. Same fix on the web stats page.
+    // Must be scoped explicitly: favorite_artists is public-read (artist pages
+    // list fans), so RLS doesn't narrow this to the caller.
     uid
       ? supabase
           .from("favorite_artists")
@@ -540,20 +538,15 @@ function PeriodPage({
               <Image source={heroArt} style={{ width: "100%", height: "100%" }} contentFit="cover" />
               {/* Scrim: art stays legible as texture, text stays legible as text. */}
               <LinearGradient
-                colors={[
-                  "rgba(18,18,18,0.45)",
-                  "rgba(18,18,18,0.70)",
-                  "rgba(18,18,18,0.94)",
-                  colors.background,
-                ]}
+                colors={[scrim(0.45), scrim(0.7), scrim(0.94), colors.background]}
                 locations={[0, 0.45, 0.78, 1]}
                 style={{ position: "absolute", inset: 0 }}
               />
             </Animated.View>
           ) : (
-            <LinearGradient
-              colors={["rgba(200,30,51,0.28)", colors.background]}
-              style={{ position: "absolute", inset: 0 }}
+            /* No artwork: flat accent panel. */
+            <View
+              style={{ position: "absolute", inset: 0, backgroundColor: colors.primarySoft }}
             />
           )}
 

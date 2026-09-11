@@ -22,7 +22,7 @@ export default function RootLayout() {
   const [fontsLoaded] = useFonts({ Manrope_600SemiBold, Manrope_800ExtraBold });
 
   // Hold the splash rather than flash unstyled text — the splash is the same
-  // #121212 as the app, so this reads as one continuous launch.
+  // #1A0E11 as the app, so this reads as one continuous launch.
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: colors.background }} />;
   }

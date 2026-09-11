@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -10,7 +9,6 @@ import { PullRefreshScroll } from "@/components/pull-refresh";
 import FavoriteSongs from "@/components/favorite-songs";
 import { Surface } from "@/components/surface";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { GlowBackground } from "@/components/glow-background";
 import { SpotifyReconnect } from "@/components/spotify-reconnect";
 import { AnimatedSpotifyStats } from "@/components/spotify-stats";
 import { useSession } from "@/lib/auth";
@@ -184,30 +182,18 @@ export default function ProfileScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <GlowBackground />
       <PullRefreshScroll
         refreshing={refreshing}
         onRefresh={onRefresh}
         indicatorTop={insets.top + 8}
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* Hero banner */}
-        <View style={{ height: 180 }}>
+        {/* Hero banner. With no banner the block is page-coloured and shorter,
+            so there's no empty slab above the avatar. */}
+        <View style={{ height: bannerUrl ? 180 : 130 }}>
           {bannerUrl ? (
             <Image source={bannerUrl} style={{ width: "100%", height: "100%" }} contentFit="cover" />
-          ) : (
-            <LinearGradient
-              colors={[colors.primary + "66", colors.primary + "1A", colors.background]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ width: "100%", height: "100%" }}
-            />
-          )}
-          {/* fade into the page so the banner blends down */}
-          <LinearGradient
-            colors={["transparent", "transparent", colors.background]}
-            style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 90 }}
-          />
+          ) : null}
           {/* Edit pill */}
           <Pressable
             onPress={() => {
@@ -443,7 +429,7 @@ export default function ProfileScreen() {
             {/* Spotify stats (Now Playing / Recently Played / Top …) */}
             <AnimatedSpotifyStats refreshKey={spotifyRefresh} />
 
-            {/* Sign out, with the join date as the quiet footer under it. */}
+            {/* Sign out, with the join date under it. */}
             <View style={{ gap: 12 }}>
               <Pressable
                 onPress={signOut}

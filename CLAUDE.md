@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-You have to start every line with calling my name.ф
-
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 @AGENTS.md
@@ -14,11 +12,27 @@ npm run build    # production build (Turbopack by default)
 npm run start    # production server
 npm run lint     # ESLint directly (next lint was removed in v16)
 npx tsc --noEmit # typecheck without emitting (use this to verify changes)
+
+# Supabase Edge Functions (Deno) — deployed by hand, like the SQL
+npx supabase functions deploy <name> --project-ref <ref>
+npx supabase secrets set KEY=value
 ```
 
 There is no test suite yet. Verify changes with `npx tsc --noEmit`.
 
+The root typecheck covers `src/` only — `tsconfig.json` excludes `mobile` (its own project) and `supabase` (Deno globals, not Node). Typecheck those separately.
+
 ## Architecture
+
+This repo holds **two npm projects** sharing one Supabase project and one Spotify `client_id`:
+
+| Path | What |
+|---|---|
+| `src/` | this Next.js 16 web app |
+| `mobile/` | the Expo app — has its own `CLAUDE.md`, read it before touching anything there |
+| `supabase/functions/` | two Deno Edge Functions (`artist-events`, `spotify-search`), deployed by hand |
+
+> **Never run `expo` from the repo root.** The Expo CLI treats the root as an Expo project and rewrites the root `package.json`/`tsconfig.json` — it once downgraded `next` 16 → 9.3.3. Run every Expo command from `mobile/`. Recovery steps are in `mobile/CLAUDE.md`.
 
 **Next.js 16 App Router** project. All routes live under `src/app/`. Path alias `@/` maps to `src/`.
 
@@ -61,6 +75,8 @@ This is the most error-prone area. Spotify deprecated many catalog endpoints (No
 
 ## Rate limiting & Spotify 429s
 
+> **This app is in Spotify development mode: 5 allowlisted users, and a small shared quota.** Users are added by hand in the Spotify dashboard under Settings → User Management, and the owner must hold Premium. A non-allowlisted account can complete OAuth and then gets **403** on every API call — which looks like login silently failing, because Supabase's `/v1/me` profile fetch is what aborts. Extended quota mode (the only way past 5 users) requires a registered organization with ≥250k MAU, so this cap is permanent. Design every feature for 5 users and minimal per-user request volume.
+
 Requesting a fresh app token per call once flooded Spotify and triggered a `429` on the whole `client_id` — which **also breaks OAuth login** (Supabase's profile fetch shares the `client_id`). Mitigations now in place:
 
 - `src/lib/spotify.ts` caches both token types until expiry (de-duped via in-flight promises), and on a Spotify `429` sets a global cool-down (`spotifyCooldown()` / `noteSpotify429()`, respects `Retry-After`) during which it stops hitting Spotify entirely. Every route checks the cool-down and returns a graceful empty/`rateLimited` payload while it's active.
@@ -68,6 +84,10 @@ Requesting a fresh app token per call once flooded Spotify and triggered a `429`
 - Per-user response caches sit in front of the user-token routes: `currently-playing` (25s), `top-stats` (5min), `recently-played` (60s), and `search` (60s). These do the real work of keeping Spotify load down — the self-limiter is just abuse protection, so its thresholds can be loose.
 
 All of this state is **in-memory** — fine for dev/single instance, but resets on serverless cold starts and is not shared across instances. For real production, back the token cache, cool-down, and limiter with Redis/Upstash (same API surface).
+
+**Two failure modes worth recognising:**
+- A dev-mode `429` is not the usual short burst-window throttle. The body reads `"reason":"QUOTA_EXCEEDED"` and `Retry-After` can be **hours** (observed: 22,633s ≈ 6h). Nothing clears it early, and while it lasts nobody can sign in on either platform — so don't sign out while one is active.
+- **A cool-down must gate the token fallback too.** In the Expo app, `getSpotifyToken()` returning null during a cool-down made every caller silently fall back to the stale `session.provider_token` and keep hammering an API that had already said no. Both platforms now check the cool-down *before* resolving a token, not after.
 
 ## Listening history & stats
 
@@ -99,15 +119,14 @@ Each game lives at `/app/games/<slug>` with a server `page.tsx` (auth gate) that
 
 ## Live dates (Ticketmaster)
 
-Spotify has **no** concerts endpoint — the concert cards in Spotify's own app come from licensed partner feeds, not the Web API. Tour dates come from the **Ticketmaster Discovery API** instead (`src/lib/ticketmaster.ts`), the one source with a self-serve key: 5000 requests/day, ~5 req/s, no partner agreement. Songkick needs a paid partner deal; Bandsintown's self-serve `app_id` is scoped to a single artist.
+Spotify has no concerts endpoint, so tour dates come from the **Ticketmaster Discovery API** (`src/lib/ticketmaster.ts`) — the only provider with a self-serve key (5000 requests/day, ~5 req/s). Songkick needs a partner deal; Bandsintown's self-serve `app_id` is scoped to one artist.
 
-- **Key:** `TICKETMASTER_API_KEY` in `.env.local` (developer.ticketmaster.com → My Apps → Consumer Key). **Entirely optional** — without it `hasTicketmaster()` is false, the route answers `configured: false`, and the artist page hides the section. Nothing else breaks.
-- **Matching is by Spotify id, not by name.** `resolveAttractionId()` searches `/attractions.json` by name, then picks the candidate whose `externalLinks.spotify` contains our artist id; it falls back to an exact name match **only** for candidates that declare no Spotify link at all, and returns null rather than guessing. Verified against live data: a search for `Coldplay` returns *Ultimate Coldplay*, *Talk tribute Coldplay*, *A Rush of Coldplay* and *Liveplay* **above** the real band, and only the real one carries `externalLinks.spotify`. Match with `includes(id)`, not by parsing the last path segment — some links carry a query string (`…/artist/3YQKmKGau1PzlVlkL1iodx?autoplay=true`).
-- **One night = several listings.** Ticketmaster returns a suite/presale link on another domain, the main event page, and multi-night packages as separate events — Metallica's 40 rows are 17 actual shows. `dedupe()` keeps one row per `date + venue`, preferring a `ticketmaster.com` URL and a real start time over a TBA package. It runs **before** the 12-event slice, or the list would be four nights repeated.
-- **Caching** (in-memory, like the Spotify token cache — Redis for real production): attraction ids 7d (misses 1h), events 6h (empty 30min), plus an in-flight map so concurrent viewers of one artist share a lookup. A *failed* request is never cached as a miss and falls back to the stale list — at **both** levels: `resolveAttractionId()` returns `{ ok, id }` so that "lookup failed" can't be written down as "this artist has no shows", which is what made Don Toliver read as 0 events while Ticketmaster had 25 for him. Only an answer caches.
-- Route: `src/app/api/events` (auth-gated, `rateLimit` 20/10s) — the key stays server-side, same as the Spotify app token. UI: the "Live Dates" section in `artist-detail.tsx`, hidden when there are no events (an empty section reads as "not touring", which we can't claim).
-- Coverage is arena/theatre-heavy in US/CA/MX/UK/IE/AU/NZ + most of the EU, and thin for small clubs — "no events" means "none that Ticketmaster sells".
-- **Mobile** goes through a Supabase Edge Function — one of two (`artist-events` and `spotify-search`, both in `supabase/functions/`, both deployed by hand). It can't reuse the route (no cookies, and no deployed web app), and can't hold the key either — Expo inlines only `EXPO_PUBLIC_*` vars, and everything it inlines ships in the bundle. It goes through a Supabase **Edge Function** instead: `supabase/functions/artist-events/index.ts` (Deno port of `src/lib/ticketmaster.ts` — **keep the two in sync**, especially the id matching), called from `mobile/lib/events.ts`. Deploy is manual like the SQL (Dashboard → Edge Functions), with `TICKETMASTER_API_KEY` as a function secret and "Verify JWT" left on.
+- **Key:** `TICKETMASTER_API_KEY` in `.env.local` (developer.ticketmaster.com → My Apps → Consumer Key). Optional — without it `hasTicketmaster()` is false, the route answers `configured: false`, and the artist page hides the section.
+- **Matching is by Spotify id, not name.** `resolveAttractionId()` searches `/attractions.json` by name, then picks the candidate whose `externalLinks.spotify` contains our artist id (substring match — some links carry a query string). Name-only matching returns tribute acts ranked above the real band; the exact-name fallback applies only to candidates with no Spotify link at all.
+- **One night = several listings** (presale link, main event page, multi-night package). `dedupe()` keeps one row per `date + venue`, preferring a `ticketmaster.com` URL with a real start time. It runs before the result slice; the fetch is `size=100` because listings collapse roughly 2:1.
+- **Caching** (in-memory): attraction ids 7d (misses 1h), events 6h (empty 30min), plus an in-flight map. A *failed* request is never cached as a miss at either level — `resolveAttractionId()` returns `{ ok, id }` so a lookup failure can't be stored as "no shows".
+- Route: `src/app/api/events` (auth-gated, `rateLimit` 20/10s). UI: the "Live Dates" section in `artist-detail.tsx` — first 5 dates plus a "Show all" expander, hidden when unconfigured or empty.
+- **Mobile** goes through the `artist-events` Supabase Edge Function (`supabase/functions/artist-events/index.ts`, a Deno port of `src/lib/ticketmaster.ts` — keep the two in sync), called from `mobile/lib/events.ts`. Deployed by hand with `TICKETMASTER_API_KEY` as a function secret and "Verify JWT" on. The other edge function, `spotify-search`, gives mobile catalog search the same way (see `mobile/CLAUDE.md`).
 
 ## Listening Map
 
@@ -141,6 +160,8 @@ Two clients — never mix them up:
 **Cross-user `security definer` RPCs** (needed because `scores`/`play_history` are owner-only under RLS, so reading across users requires `definer`; all `set search_path = public`): `get_name_song_leaderboard(p_artist_id)` (per-artist Name That Song ranking by best points), `get_map_countries()` (top artist per country by minutes + per-country totals/listener counts), `get_country_top_artists(p_country)` and `get_country_top_listeners(p_country)` (map detail panel). Like the rest, the SQL lives only in the Supabase editor, not the repo.
 
 All tables have RLS. Owner-write policies use `auth.uid() = user_id`; `favorite_*` add a `using (true)` SELECT policy for public read.
+
+> **A public-read table is not scoped by RLS — scope it yourself.** `favorite_artists` and `favorite_songs` are readable by everyone (artist pages list a band's fans, and "Loved by MusicFreak" counts across users), so any query that means *this user's* rows must add `.eq("user_id", uid)` explicitly. Forgetting it is silent: a `count` over `favorite_artists` returns every user's rows, which is how the Superfan badge ("favourited 5+ artists") appeared on accounts that had favourited nothing.
 
 **Storage:** bucket `profile-media` (public) holds uploaded avatars/banners, including GIFs. Uploads go to `{user_id}/...`; RLS on `storage.objects` restricts writes to your own folder via `(storage.foldername(name))[1]`.
 

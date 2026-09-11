@@ -279,10 +279,7 @@ async function refreshAccessToken(token: string): Promise<string | null> {
   });
 
   if (res.status === 429) {
-    // Shared client_id: a 429 here can break OAuth login too, so back off
-    // rather than retrying. Same rule as the web app's global cool-down.
-    const retryAfter = Number(res.headers.get("retry-after") ?? 30);
-    cooldownUntil = Date.now() + (Number.isFinite(retryAfter) ? retryAfter : 30) * 1000;
+    noteSpotify429(res.headers.get("retry-after"));
     return null;
   }
 
@@ -313,6 +310,29 @@ async function refreshAccessToken(token: string): Promise<string | null> {
 
   access = { value: data.access_token, expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000 };
   return access.value;
+}
+
+/**
+ * Record a 429 and stay off Spotify until it clears.
+ *
+ * Every Spotify response feeds a 429 into this, not just token refreshes:
+ * /v1/me calls share the client_id, and a 429 on it can break OAuth login.
+ * Same rule as spotifyUserFetch() in the web app.
+ */
+export function noteSpotify429(retryAfterHeader: string | null) {
+  const secs = Number(retryAfterHeader ?? NaN);
+  const waitMs = (Number.isFinite(secs) && secs > 0 ? secs : 30) * 1000;
+  // Never shorten an existing cool-down.
+  cooldownUntil = Math.max(cooldownUntil, Date.now() + waitMs);
+  console.warn(
+    `[spotify-auth] 429 — backing off ${Math.round(waitMs / 1000)}s (Retry-After: ${retryAfterHeader ?? "absent"})`,
+  );
+}
+
+/** Seconds left in the current cool-down, or 0. Drives UI copy, not logic. */
+export function spotifyCooldown(): number {
+  const left = cooldownUntil - Date.now();
+  return left > 0 ? Math.ceil(left / 1000) : 0;
 }
 
 /**

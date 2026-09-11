@@ -1,16 +1,12 @@
 // Live/tour dates from the Ticketmaster Discovery API.
 //
-// Spotify has no concerts endpoint (the concert cards in its own app come from
-// licensed partner feeds), so tour dates have to come from somewhere else.
-// Ticketmaster is the one source with a self-serve key: no partner agreement,
-// 5000 requests/day and ~5 req/s. Coverage is strong for arena/theatre shows in
-// the US/CA/MX/UK/IE/AU/NZ and most of the EU, and thin for small clubs and
-// promoters who don't sell through them — so "no events" here means "none that
-// Ticketmaster sells", which is what the UI says.
+// Spotify has no concerts endpoint, so tour dates come from Ticketmaster —
+// the only provider with a self-serve key (5000 req/day, ~5 req/s). Coverage
+// is good for arena/theatre shows in NA, UK and most of the EU and thin for
+// small clubs, so "no events" means "none that Ticketmaster sells".
 //
-// Everything below is in-memory, like the Spotify token cache: fine for a
-// single instance, resets on a serverless cold start. Back it with Redis for
-// real production (the API surface stays the same).
+// Caches are in-memory (same as the Spotify token cache): fine for a single
+// instance, reset on cold start. Swap for Redis if this ever runs multi-instance.
 
 const TM_BASE = "https://app.ticketmaster.com/discovery/v2"
 
@@ -80,10 +76,9 @@ const eventsCache = new Map<string, { events: LiveEvent[]; expiresAt: number }>(
 const inflight = new Map<string, Promise<EventsLookup>>()
 
 /**
- * `cacheable` is false when Ticketmaster never answered. Remembering *that* as
- * "no upcoming shows" hid a touring artist for the full 30-minute empty TTL
- * after a single blip, which is exactly how Don Toliver showed up empty while
- * Ticketmaster had 25 dates for him.
+ * `cacheable` is false when Ticketmaster never answered. A failed lookup must
+ * not be cached as "no upcoming shows", or one network blip hides a touring
+ * artist for the whole empty-result TTL.
  */
 type EventsLookup = { events: LiveEvent[]; cacheable: boolean }
 
@@ -131,11 +126,9 @@ function pickImage(images: TmImage[] | undefined): string | null {
 }
 
 /**
- * One night at one venue comes back as several listings — a suite/presale link
- * on another domain, the main Ticketmaster page, a "2-day ticket" package.
- * Metallica's 40 raw rows are 17 actual shows, so without this the list reads
- * "Oct 1, Oct 1, Oct 1, Oct 3, Oct 3…". Keep one row per date+venue, preferring
- * a ticketmaster.com URL and a real start time over a TBA package.
+ * One night at one venue often comes back as several listings (presale link,
+ * main event page, multi-day package). Keep one row per date+venue, preferring
+ * a ticketmaster.com URL with a real start time over a TBA package.
  */
 function listingScore(e: LiveEvent): number {
   return (e.url.includes("ticketmaster.") ? 2 : 0) + (e.time ? 1 : 0)
@@ -174,9 +167,8 @@ async function resolveAttractionId(
     classificationName: "music",
     size: "10",
   })
-  // A failed request must NOT be cached as a miss — that would hide the artist
-  // for an hour over one blip. `ok: false` also stops the caller caching an
-  // empty event list, which is the same bug one layer up.
+  // Don't cache a failed request as a miss; `ok: false` also tells the caller
+  // not to cache an empty event list for it.
   if (!data) return { ok: false, id: cached?.id ?? null }
 
   const candidates: TmAttraction[] = data._embedded?.attractions ?? []
@@ -217,16 +209,14 @@ export async function getArtistEvents(
 
   const request = (async (): Promise<EventsLookup> => {
     const attraction = await resolveAttractionId(spotifyArtistId, artistName)
-    // Lookup failed → serve what we have and don't write anything down.
+    // Lookup failed: serve what we have, cache nothing.
     if (!attraction.ok) return { events: cached?.events ?? [], cacheable: false }
-    // Answered, and this artist genuinely isn't on Ticketmaster.
+    // Answered, and the artist isn't on Ticketmaster.
     if (!attraction.id) return { events: [], cacheable: true }
 
-    // 100 in one request (Discovery allows up to 200). It has to be generous
-    // because these are *listings*, not shows — dedupe below collapses them at
-    // roughly 2:1, so a 40-row fetch was silently truncating long tours before
-    // they were even counted: Metallica has 63 listings. Discovery returns only
-    // upcoming events by default, and `sort=date,asc` puts the next show first.
+    // These are listings, not shows — dedupe collapses them roughly 2:1, so
+    // fetch generously (max is 200) or long tours get truncated before dedupe.
+    // Discovery returns upcoming events only; date,asc puts the next show first.
     const data = await tmFetch("events.json", {
       attractionId: attraction.id,
       sort: "date,asc",

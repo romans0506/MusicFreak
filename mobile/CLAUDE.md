@@ -49,16 +49,16 @@ Unlike the web app, there is **no API layer**. The device talks straight to Supa
 
 The SQL for these lives only in the Supabase editor, not in the repo — see `../CLAUDE.md` for the schema.
 
-**The two edge functions.** Sources live in `../supabase/functions/`; both are Deno ports of web code — **keep each in sync with its original**. Both rely on "Verify JWT" being ON as their entire auth story, and both are deployed by hand (`npx supabase functions deploy <name> --project-ref <ref>`), like the SQL. Nothing about a *missing* deployment is fatal: `invoke` errors, the client returns `ok: false`, and the feature quietly hides itself.
+**The two edge functions.** Sources live in `../supabase/functions/`; both are Deno ports of web code — keep each in sync with its original. Both rely on "Verify JWT" as their auth gate and are deployed by hand (`npx supabase functions deploy <name> --project-ref <ref>`), like the SQL. A missing deployment isn't fatal: `invoke` errors, the client returns `ok: false`, and the feature hides itself.
 
 | Function | Client | Holds | Ported from |
 |---|---|---|---|
 | `artist-events` | `lib/events.ts` | `TICKETMASTER_API_KEY` | `src/lib/ticketmaster.ts` |
 | `spotify-search` | `lib/artist-search.ts` | `SPOTIFY_CLIENT_ID` + `SPOTIFY_CLIENT_SECRET` | `getSpotifyAppToken()` in `src/lib/spotify.ts` |
 
-Why they can't live on the device: Expo only inlines `EXPO_PUBLIC_*` vars, and everything it inlines ships inside the bundle where it can be read out of the .apk/.ipa. A metered key or an OAuth client secret never passes that test.
+They exist because Expo inlines only `EXPO_PUBLIC_*` vars and everything it inlines ships in the bundle — a metered key or a client secret can't go there.
 
-> **`spotify-search` puts the client secret in a third place** — `.env.local`, Supabase → Auth → Providers → Spotify, and now Edge Functions → Secrets. Rotating it means updating all three, or **login breaks**. Note also that it mints an **app** token (client-credentials), which is not the token type PKCE exists to solve: it belongs to the application, has no refresh token to lose, and is simply re-minted on expiry. The hazard is a **429 on the shared `client_id`, which also breaks OAuth login** — hence the cached token, the in-flight dedupe, the cool-down, the per-query response cache, and the 350ms debounce in the Artists screen.
+> **`spotify-search` puts the client secret in a third place** (`.env.local`, Supabase → Auth → Providers → Spotify, Edge Functions → Secrets). Rotate all three together or login breaks. It mints an **app** token (client credentials), which has no refresh token and is simply re-minted on expiry; the hazard is a 429 on the shared `client_id`, which also breaks OAuth login — hence the cached token, in-flight dedupe, cool-down, per-query cache, and the 350ms debounce in the Artists screen.
 
 Three libraries are **hand-copied ports** of web files — there is no shared package between the two projects, so a change on one side must be mirrored on the other: `lib/stats.ts` (`computeStreak`, `computeBadges`, or a streak disagrees across platforms), `lib/itunes.ts`, and `lib/music-trivia.ts` (or the two quizzes drift apart). Each file's header records what, if anything, was changed in the copy.
 
@@ -89,7 +89,7 @@ Scopes live in `spotify-auth.ts` as `SPOTIFY_SCOPES` and are imported by `lib/au
 | `/v1/search`, artist discography, batch `/v1/artists?ids=` | **no** — need the app token (client secret) |
 | `GET /v1/artists/{id}/top-tracks` | **no** — deprecated, 403. Derive from `/me/top/tracks` across all three time ranges, filtered by artist |
 
-`/v1/search` is now reachable *indirectly*, through the `spotify-search` edge function above — the Artists screen filters your own top artists locally **and** searches the catalog from two characters, so an artist you have never played can still be opened (catalog hits carry real Spotify ids, which is what the artist screen, favourites, the per-artist leaderboard and Ticketmaster matching all key off). The artist screen still has no discography. The games' artist picker gets around it differently — it searches **iTunes**, which is keyless and is already the catalogue those games draw their songs from (see below).
+`/v1/search` is reachable indirectly through the `spotify-search` edge function — the Artists screen filters your own top artists locally and searches the catalog from two characters, so an artist you've never played can still be opened (catalog hits carry real Spotify ids). The artist screen still has no discography. The games' artist picker gets around it differently — it searches **iTunes**, which is keyless and is already the catalogue those games draw their songs from (see below).
 
 **One poller, app-wide.** `lib/now-playing.tsx` polls currently-playing every 30s (plus on foreground) and shares it through context. Both the mini-player and the profile panel consume it. Do not add a second poll — the `client_id` is rate-limited and a 429 on it also breaks OAuth login. `lib/scrobble.ts` rides this same tick for the same reason.
 
@@ -171,9 +171,11 @@ Env vars in `mobile/.env.local` (gitignored): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_
 
 ## Design system
 
-Dark only. The palette mirrors the web tokens; crimson `#c81e33` is the single accent.
+Dark only, and **dark scarlet** — the ground is a red-black `#1A0E11`, not neutral grey. The hue lives in the surfaces rather than in gradients painted over a grey page; there are no decorative gradients or blurred-blob glows (RN has no cheap large-radius blur, so a faked glow is just a hard-edged circle). Crimson `#c81e33` is the single accent. This does **not** mirror the web tokens — `src/app/globals.css` is still neutral grey with the blurred-blob motif.
 
-**Surfaces — `theme/surfaces.ts`.** Depth comes from tone, not blur: `background #121212` → `cardSurface #1c1c1e` (+1px hairline) → `raisedSurface #242427`. Shadows are tinted crimson, never neutral black. There is deliberately **no glassmorphism** — the old `BlurView` card was removed; `components/surface.tsx` replaced it. Don't reintroduce `expo-blur`.
+**Surfaces — `theme/surfaces.ts`.** Depth comes from tone, not blur: `background #1A0E11` → `cardSurface #241419` (+1px hairline) → `raisedSurface #2E1A20`. Every step carries the ground's hue, and muted text and borders are warmed to match. Shadows are tinted crimson, never neutral black. There is deliberately **no glassmorphism** — the old `BlurView` card was removed; `components/surface.tsx` replaced it. Don't reintroduce `expo-blur`.
+
+> **Image scrims use `scrim(alpha)` from `theme/colors.ts`, never a literal**, so they can't drift from the ground colour. `app.json`'s splash `backgroundColor` must track `background` too, or the launch flashes.
 
 **Type — `theme/type.ts`.** Manrope (loaded once in `app/_layout.tsx`) for headings and figures; the OS font for body text. Use the `typography.*` tokens rather than inline `fontSize`/`fontWeight`; tabular figures are baked into the number tokens.
 

@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useSession } from "@/lib/auth";
+import { colors } from "@/theme/colors";
 
 export default function LoginScreen() {
   const { signIn } = useSession();
@@ -28,29 +28,8 @@ export default function LoginScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#000" }}>
-      {/* Black → crimson splash */}
-      <LinearGradient
-        colors={["#000000", "#1a0407", "#3f0d18", "#7d1322"]}
-        locations={[0, 0.4, 0.72, 1]}
-        start={{ x: 0.15, y: 0 }}
-        end={{ x: 0.85, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      {/* Red focal glow behind the wordmark */}
-      <View
-        style={{
-          position: "absolute",
-          top: "26%",
-          alignSelf: "center",
-          width: 440,
-          height: 440,
-          borderRadius: 999,
-          backgroundColor: "#e01935",
-          opacity: 0.28,
-        }}
-      />
-
+    // Flat ground, no gradient — the wordmark's text-shadow carries the screen.
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View
         style={{
           flex: 1,
@@ -71,14 +50,14 @@ export default function LoginScreen() {
               textShadowOffset: { width: 0, height: 0 },
               textShadowRadius: 24,
             }}>
-            <Text style={{ color: "#fff" }}>Music</Text>
+            <Text style={{ color: colors.foreground }}>Music</Text>
             <Text style={{ color: "#ff2d45" }}>Freak</Text>
           </Animated.Text>
 
           <Animated.Text
             entering={FadeInDown.delay(220).duration(600)}
             style={{
-              color: "rgba(255,255,255,0.74)",
+              color: colors.mutedForeground,
               fontSize: 16,
               textAlign: "center",
               maxWidth: 300,
@@ -95,9 +74,9 @@ export default function LoginScreen() {
             disabled={busy}
             style={({ pressed }) => ({
               transform: [{ scale: pressed ? 0.96 : 1 }],
-              backgroundColor: "#161616",
+              backgroundColor: colors.card,
               borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.16)",
+              borderColor: colors.border,
               paddingVertical: 17,
               borderRadius: 999,
               alignItems: "center",
@@ -107,7 +86,7 @@ export default function LoginScreen() {
             {busy ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}>
+              <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 16 }}>
                 Continue with Spotify
               </Text>
             )}

@@ -1,28 +1,20 @@
 // Supabase Edge Function (Deno) — Spotify catalog artist search.
 //
-// Why this exists: /v1/search needs the APP token (client-credentials), which
-// needs the client secret, which can never ship in an Expo bundle. Without this
-// the phone can only ever reach artists already in the user's own top-artists
-// list — you could not open an artist you had never played.
+// /v1/search needs the app token (client credentials), which needs the client
+// secret, which can't ship in the mobile bundle. Without this the Artists tab
+// could only reach artists already in the user's own top list.
 //
-// This is NOT the user-token problem that PKCE solves. An app token belongs to
-// the application, not to a session: mint it from client_id + secret, use it for
-// an hour, mint another. There is no refresh token to lose and no consent screen.
-// Port of getSpotifyAppToken() in src/lib/spotify.ts — keep them in sync. One
-// deliberate difference: Deno has no Buffer, so the Basic header uses btoa().
+// Port of getSpotifyAppToken() in src/lib/spotify.ts (Deno has no Buffer, so
+// the Basic header uses btoa()). Keep the two in sync.
 //
-// THE HAZARD IS 429, NOT EXPIRY. A 429 on this client_id also breaks OAuth
-// login, because Supabase's profile fetch shares the id. Hence: the token is
-// cached and never minted per request, concurrent mints share one promise,
-// a 429 sets a global cool-down, and responses are cached per query.
+// A 429 on this client_id also breaks OAuth login (Supabase's profile fetch
+// shares it), so: token cached and never minted per request, concurrent mints
+// share one promise, a 429 sets a cool-down, responses cached per query.
 //
-// DEPLOY:
-//   1. supabase functions deploy spotify-search   (or paste in the Dashboard)
-//   2. Edge Functions → Secrets → SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET.
-//      Same values as the web .env.local. NOTE: the secret now lives in three
-//      places — .env.local, Auth → Providers → Spotify, and here. Rotating it
-//      means updating all three, or login breaks.
-//   3. Leave "Verify JWT" ON.
+// Deploy: `supabase functions deploy spotify-search`, then add
+// SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET under Edge Functions → Secrets.
+// The secret then lives in three places (.env.local, Auth provider config,
+// here) — rotate all three together. Keep "Verify JWT" on.
 
 type SpotifyArtist = { id: string; name: string; image: string | null };
 

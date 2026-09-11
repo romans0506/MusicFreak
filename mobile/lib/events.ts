@@ -1,13 +1,9 @@
 import { supabase } from "@/lib/supabase";
 
-// Upcoming live dates, by way of the `artist-events` Supabase Edge Function
-// (source in supabase/functions/artist-events/index.ts).
-//
-// The Ticketmaster key can NOT live here. Expo only inlines EXPO_PUBLIC_* vars,
-// and everything it inlines ships inside the bundle where anyone can read it —
-// a leaked key is someone else's 5000 requests/day. The function holds the key
-// as a Supabase secret and `functions.invoke` sends the session we already
-// have, so the device never sees it.
+// Upcoming live dates via the `artist-events` Supabase Edge Function
+// (supabase/functions/artist-events/index.ts). The Ticketmaster key can't ship
+// in the bundle, so the function holds it and `functions.invoke` sends the
+// session we already have.
 
 export type LiveEvent = {
   id: string;
@@ -37,11 +33,7 @@ export type EventsResult = { ok: boolean; events: LiveEvent[] };
 const cache = new Map<string, { events: LiveEvent[]; expiresAt: number }>();
 const TTL_MS = 15 * 60_000;
 
-/**
- * `force` skips the local cache — pull-to-refresh passes it. Without it a stale
- * empty result (one blip on the way to Ticketmaster) sat there for the full TTL
- * with no way for the user to clear it short of restarting the app.
- */
+/** `force` skips the local cache — pull-to-refresh passes it. */
 export async function getArtistEvents(
   artistId: string,
   name: string,
@@ -56,8 +48,7 @@ export async function getArtistEvents(
     const { data, error } = await supabase.functions.invoke("artist-events", {
       body: { artistId, name },
     });
-    // A missing deployment lands here too, which is why this degrades to
-    // "hide the section" instead of surfacing an error the user can't act on.
+    // A missing deployment lands here too; degrade to "hide the section".
     if (error) return { ok: false, events: cached?.events ?? [] };
     if (data?.configured === false) return { ok: false, events: [] };
 

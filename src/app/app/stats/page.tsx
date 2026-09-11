@@ -85,10 +85,8 @@ export default async function StatsPage() {
     totalPlayCount(supabase),
     supabase.rpc("get_play_days", { p_tz: "UTC" }),
     supabase.rpc("get_play_hours", { p_tz: "UTC" }),
-    // MUST be scoped to the user. `favorite_artists` is public-read (the artist
-    // page lists a band's fans), so RLS does NOT narrow this to the caller — an
-    // unfiltered count returns every user's rows and handed the Superfan badge
-    // to accounts that had favourited nothing. Same fix in the Expo app.
+    // Must be scoped explicitly: favorite_artists is public-read (artist pages
+    // list fans), so RLS doesn't narrow this to the caller.
     uid
       ? supabase
           .from("favorite_artists")

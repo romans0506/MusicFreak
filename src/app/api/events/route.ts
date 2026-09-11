@@ -5,12 +5,9 @@ import { getArtistEvents, hasTicketmaster } from "@/lib/ticketmaster"
 import { rateLimit, callerKey } from "@/lib/rate-limit"
 
 /**
- * Upcoming Ticketmaster shows for a Spotify artist.
- *
- * The key never reaches the browser, same as the Spotify app token — clients
- * (web and, later, the Expo app) call this instead. `configured: false` tells
- * the UI to hide the section entirely rather than claim the artist has no
- * shows, which is a different thing.
+ * Upcoming Ticketmaster shows for a Spotify artist. The key stays server-side;
+ * `configured: false` tells the UI to hide the section rather than show
+ * "no upcoming shows".
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -28,8 +25,7 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  // Auth gate before any outbound call — the daily quota is shared by everyone,
-  // so an unauthenticated caller must not be able to spend it.
+  // Auth gate before any outbound call — the daily quota is shared.
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 })

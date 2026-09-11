@@ -8,7 +8,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { artistArtwork, searchItunesArtists } from "@/lib/itunes";
 import { type GameArtist } from "@/lib/games";
 import { getTopArtistsFull } from "@/lib/spotify";
-import { colors } from "@/theme/colors";
+import { colors, scrim } from "@/theme/colors";
 import { typography } from "@/theme/type";
 
 /**
@@ -202,7 +202,7 @@ export function ArtistPicker({ onPick }: { onPick: (artist: GameArtist) => void 
                         position: "absolute",
                         inset: 0,
                         borderRadius: 39,
-                        backgroundColor: "rgba(18,18,18,0.6)",
+                        backgroundColor: scrim(0.6),
                         alignItems: "center",
                         justifyContent: "center",
                       }}>

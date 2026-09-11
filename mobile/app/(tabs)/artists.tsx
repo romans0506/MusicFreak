@@ -12,20 +12,18 @@ import { Skeleton } from "@/components/skeleton";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { SpotifyReconnect } from "@/components/spotify-reconnect";
 import { searchArtists } from "@/lib/artist-search";
-import { getTopArtists, type ArtistFull } from "@/lib/spotify";
-import { useSpotifyEpoch } from "@/lib/spotify-auth";
-import { colors } from "@/theme/colors";
+import { getTopArtists, type ArtistFull, type FailStatus } from "@/lib/spotify";
+import { spotifyCooldown, useSpotifyEpoch } from "@/lib/spotify-auth";
+import { colors, scrim } from "@/theme/colors";
 import { typography } from "@/theme/type";
 import { cardSurface } from "@/theme/surfaces";
 
 // Mirrors the web /app/artists page (top 24 artists, medium_term).
 //
-// The search box does two things at once: it filters the artists we already
-// have, and — from two characters — searches Spotify's whole catalog through
-// the `spotify-search` edge function. /v1/search needs the APP token (client
-// secret), which can't ship in a bundle, so the function holds it; see
-// lib/artist-search.ts. Catalog hits carry real Spotify ids, so a searched
-// artist opens the same screen as one of your own.
+// The search box filters the artists we already have and, from two characters,
+// also searches the Spotify catalog through the `spotify-search` edge function
+// (see lib/artist-search.ts). Catalog hits carry real Spotify ids, so a
+// searched artist opens the same screen as one of your own.
 //
 // Layout: your #1 artist gets a full-width poster; the rest is a borderless
 // grid where the photos do the work instead of card frames.
@@ -79,7 +77,7 @@ function FeatureArtist({ artist }: { artist: ArtistFull }) {
           />
         )}
         <LinearGradient
-          colors={["rgba(18,18,18,0.2)", "rgba(18,18,18,0.75)", colors.background]}
+          colors={[scrim(0.2), scrim(0.75), colors.background]}
           locations={[0, 0.65, 1]}
           style={{ position: "absolute", inset: 0 }}
         />
@@ -110,6 +108,53 @@ function FeatureArtist({ artist }: { artist: ArtistFull }) {
       </Pressable>
     </Animated.View>
   );
+}
+
+/** "6h 15m" / "12m" */
+function formatWait(seconds: number): string {
+  const mins = Math.ceil(seconds / 60);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const rest = mins % 60;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+/** Error copy per failure cause — each one needs a different action. */
+function failCopy(status: FailStatus): { title: string; body: string } {
+  if (status === 0)
+    return {
+      title: "Spotify isn't connected",
+      body: "We have no Spotify token on this device — or we're waiting out a rate limit. Reconnect below, or try again in a minute.",
+    };
+  if (status === -1)
+    return {
+      title: "Couldn't reach Spotify",
+      body: "The request didn't complete. Check your connection and pull to refresh.",
+    };
+  if (status === 401)
+    return {
+      title: "Spotify rejected the session",
+      body: "The token was refused. Reconnect Spotify below.",
+    };
+  if (status === 403)
+    return {
+      title: "This account isn't allowed yet",
+      body: "The Spotify app is in development mode, which only allows accounts added under User Management in the Spotify dashboard. Add this account there, then pull to refresh.",
+    };
+  if (status === 429) {
+    // Development-mode quota bans last hours, so show the real wait.
+    const left = spotifyCooldown();
+    return {
+      title: "Spotify is rate-limiting us",
+      body: left
+        ? `Spotify's quota for this app is spent. It unlocks in about ${formatWait(left)} — everything else in the app keeps working until then.`
+        : "Too many requests to Spotify just now. This clears on its own — pull to refresh in a minute.",
+    };
+  }
+  return {
+    title: "Couldn't load your artists",
+    body: `Spotify answered with an error (${status}). Pull to refresh, or sign out and back in.`,
+  };
 }
 
 /** The small uppercase heading over each grid block. */
@@ -197,20 +242,21 @@ export default function ArtistsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [failStatus, setFailStatus] = useState<FailStatus>(0);
   const [query, setQuery] = useState("");
   // Keyed by the query it answers, so a slow response for an old query can't
-  // flash under a newer one — and so "loading" is derivable rather than a
-  // second state set synchronously in the effect below.
+  // flash under a newer one, and "loading" is derivable instead of a second
+  // state written from the effect.
   const [remote, setRemote] = useState<{ q: string; artists: ArtistFull[] }>({ q: "", artists: [] });
 
   const epoch = useSpotifyEpoch();
   const load = useCallback(async () => {
-    // `ok` is the only failure signal. An empty list is NOT one: a fresh
-    // Spotify account has no ranked artists yet, and reading empty as "broken
-    // token" showed the error screen to people whose session was fine.
-    const { ok, artists: list } = await getTopArtists();
+    // `ok` is the failure signal. An empty list is not one — a fresh Spotify
+    // account has no ranked artists yet.
+    const { ok, artists: list, status } = await getTopArtists();
     setArtists(list);
     setFailed(!ok);
+    setFailStatus(status);
   }, []);
 
   useEffect(() => {
@@ -229,8 +275,8 @@ export default function ArtistsScreen() {
     }
   }, [load]);
 
-  // Catalog search, debounced — every keystroke is an edge-function call and a
-  // Spotify request otherwise, and a 429 on this client_id breaks OAuth login.
+  // Catalog search, debounced: each query is a Spotify request on the shared
+  // client_id, and a 429 there also breaks OAuth login.
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) return;
@@ -340,10 +386,10 @@ export default function ArtistsScreen() {
           <View style={{ alignItems: "center", gap: 8, paddingVertical: 60, paddingHorizontal: 40 }}>
             <IconSymbol name="music.mic" size={30} color={colors.mutedForeground} />
             <Text style={{ color: colors.foreground, fontSize: 16, fontWeight: "600" }}>
-              Couldn&apos;t load your artists
+              {failCopy(failStatus).title}
             </Text>
             <Text style={{ color: colors.mutedForeground, fontSize: 13, textAlign: "center" }}>
-              Your Spotify session may have expired. Pull to refresh, or sign out and back in.
+              {failCopy(failStatus).body}
             </Text>
             {/* Self-hides unless the connection is genuinely dead. */}
             <View style={{ alignSelf: "stretch", marginTop: 8 }}>
@@ -389,8 +435,7 @@ export default function ArtistsScreen() {
               </View>
             ) : null}
 
-            {/* Catalog results — artists you've never played. Shown second:
-                what you listen to is the more likely target of a search. */}
+            {/* Catalog results — shown after your own artists. */}
             {searching ? (
               <View
                 style={{

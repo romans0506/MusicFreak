@@ -14,7 +14,7 @@ import { colors } from "@/theme/colors";
  *
  * Vectors rather than a PNG so it stays crisp at any size. Every tone is in the
  * black family, separated only by luminance and lifted just far enough off
- * `background` (#121212) to read on it — that's what keeps him a silhouette
+ * `background` (#1A0E11) to read on it — that's what keeps him a silhouette
  * rather than a cartoon at 64pt. The shades and mouth are the only colour —
  * which is why the padlock below is drawn in the black family too, even though
  * an accent lock would be louder.

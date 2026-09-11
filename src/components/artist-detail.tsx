@@ -73,12 +73,12 @@ function formatDuration(ms: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
 }
 
-/** Dates shown before the expander. A long tour is 40+ nights — not a wall. */
+/** Dates shown before the "show all" expander. */
 const EVENT_PREVIEW_COUNT = 5
 
-// Event dates arrive as a bare local "YYYY-MM-DD". Parsing that with Date()
-// would re-interpret it as UTC midnight and shift the day backwards for anyone
-// west of Greenwich, so read the parts straight off the string instead.
+// Event dates are bare local "YYYY-MM-DD" strings. new Date() would treat them
+// as UTC midnight and shift the day for anyone west of Greenwich, so read the
+// parts off the string.
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 
 function monthLabel(date: string) {
@@ -110,8 +110,8 @@ export default function ArtistDetail({ artist, artistId, fans, isFavorited, love
   const [tracksLoading, setTracksLoading] = useState(true)
   const [events, setEvents] = useState<LiveEvent[]>([])
   const [eventsLoading, setEventsLoading] = useState(true)
-  // null until we know: no TICKETMASTER_API_KEY means hide the section, which
-  // is not the same as "this artist has no shows".
+  // null until known. No API key means hide the section, which is not the
+  // same as "no shows".
   const [eventsConfigured, setEventsConfigured] = useState<boolean | null>(null)
   const [showAllEvents, setShowAllEvents] = useState(false)
 
@@ -335,9 +335,7 @@ export default function ArtistDetail({ artist, artistId, fans, isFavorited, love
               </div>
             )}
 
-            {/* Live dates (Ticketmaster). Hidden entirely when there's no API
-                key — an empty section would read as "not touring", which is a
-                claim we can't make without having asked. */}
+            {/* Live dates (Ticketmaster). Hidden when unconfigured or empty. */}
             {eventsConfigured !== false && (eventsLoading || events.length > 0) && (
               <div className="mt-10">
                 <div className="mb-4 flex items-baseline justify-between gap-3">

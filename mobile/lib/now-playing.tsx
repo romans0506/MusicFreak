@@ -27,6 +27,11 @@ export function NowPlayingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
+      // Don't poll in the background: nothing is on screen, and a 30s tick
+      // from a backgrounded app burns ~2,900 requests a day against a
+      // development-mode quota. The AppState listener refreshes on return.
+      if (AppState.currentState !== "active") return;
+
       getNowPlaying().then((n) => {
         if (!cancelled) setNow(n);
       });

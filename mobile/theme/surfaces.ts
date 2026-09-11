@@ -8,12 +8,14 @@ import { colors } from "@/theme/colors";
  * Depth comes from TONE, not blur: every surface is opaque and sits one step
  * lighter than what's behind it. There is no frosted glass, no sheen, no rim
  * highlight — a card reads as raised because it is lighter and casts a soft,
- * crimson-tinted shadow, the way Apple Music and Linear do it.
+ * crimson-tinted shadow, the way Apple Music and Linear do it. Every step
+ * carries the ground's red hue — a neutral grey card on a scarlet page reads
+ * as a foreign object.
  *
  * The ramp (never skip a step, never nest deeper than `raised`):
- *   base   #121212  the page itself
- *   card   #1c1c1e  a card on the page
- *   raised #242427  a tile/row sitting on a card
+ *   base   #1A0E11  the page itself
+ *   card   #241419  a card on the page
+ *   raised #2E1A20  a tile/row sitting on a card
  *
  * Shadows are tinted with the crimson accent rather than neutral black —
  * a grey shadow on a warm dark page reads as dirt.

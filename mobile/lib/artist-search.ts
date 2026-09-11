@@ -1,14 +1,11 @@
 import { supabase } from "@/lib/supabase";
 import type { ArtistFull } from "@/lib/spotify";
 
-// Spotify catalog search, by way of the `spotify-search` Supabase Edge Function
-// (source in supabase/functions/spotify-search/index.ts).
-//
-// /v1/search needs the APP token, which needs the client secret, which can't
-// ship in an Expo bundle — so without the function the Artists tab can only
-// reach artists already in your own top-artists list. The results carry real
-// Spotify ids, which is the whole point: the artist screen, favourites, the
-// per-artist leaderboard and Ticketmaster matching all key off that id.
+// Spotify catalog search via the `spotify-search` Supabase Edge Function
+// (supabase/functions/spotify-search/index.ts). /v1/search needs the app
+// token, which needs the client secret, which can't ship in the bundle.
+// Results carry real Spotify ids, so everything keyed on artist id
+// (artist screen, favourites, leaderboard, live dates) works for them.
 
 export type SearchResult = {
   /** false when the call itself failed — no deployment, offline, or a 429. */
@@ -31,9 +28,8 @@ export async function searchArtists(query: string): Promise<SearchResult> {
     const { data, error } = await supabase.functions.invoke("spotify-search", { body: { q } });
     if (error || data?.ok === false) return { ok: false, artists: cached?.artists ?? [] };
 
-    // Search results are id/name/image only — a development-mode app gets no
-    // followers/popularity here. The artist screen's own GET /v1/artists/{id}
-    // fills those in, so the shape is padded rather than a separate type.
+    // Search results are id/name/image only (dev-mode apps get no followers or
+    // popularity from /v1/search); the artist screen fills the rest in.
     const artists: ArtistFull[] = (data?.artists ?? []).map(
       (a: { id: string; name: string; image: string | null }) => ({
         id: a.id,
