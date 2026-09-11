@@ -16,7 +16,7 @@ import { typography } from "@/theme/type";
  * "By Artist" mode — the mobile counterpart of the web ArtistPicker.
  *
  * The web picker searches Spotify. The device can't: /v1/search needs the app
- * token (see CLAUDE.md), which is why the Artists tab only filters your own top
+ * token (see docs/mobile.md), which is why the Artists tab only filters your own top
  * artists. Here that would be too small a world — half the point of these games
  * is playing an artist you *don't* listen to — so search goes to iTunes, which
  * is keyless and is already the catalogue both games draw their songs from.

@@ -1,10 +1,6 @@
-# CLAUDE.md
+# Engineering notes: mobile app
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-@AGENTS.md
-
-The MusicFreak **Expo app**. The Next.js web app lives one level up and is documented in `../CLAUDE.md` — the two are separate npm projects that share one Supabase project and one Spotify client_id.
+The MusicFreak **Expo app**, in `mobile/`. The Next.js web app is documented in [`web.md`](web.md) — the two are separate npm projects that share one Supabase project and one Spotify client_id. Paths below are relative to `mobile/`; `src/...` paths refer to the web app.
 
 ## Commands
 
@@ -47,7 +43,7 @@ Unlike the web app, there is **no API layer**. The device talks straight to Supa
 - Cross-user RPC (`security definer`): `get_name_song_leaderboard`.
 - Tables/views read directly: `profiles`, `leaderboard`, `scores`, `favorite_artists`, `favorite_songs`, plus the `profile-media` storage bucket.
 
-The SQL for these lives only in the Supabase editor, not in the repo — see `../CLAUDE.md` for the schema.
+The SQL for these lives only in the Supabase editor, not in the repo — see [`web.md`](web.md#supabase) for the schema.
 
 **The two edge functions.** Sources live in `../supabase/functions/`; both are Deno ports of web code — keep each in sync with its original. Both rely on "Verify JWT" as their auth gate and are deployed by hand (`npx supabase functions deploy <name> --project-ref <ref>`), like the SQL. A missing deployment isn't fatal: `invoke` errors, the client returns `ok: false`, and the feature hides itself.
 
@@ -161,7 +157,7 @@ The two `openAuthSessionAsync` calls are also spaced by a short delay — iOS al
 
 Sign-in failures surface on the login screen. They used to be `console.warn` only, which left a stuck user with nothing to report — and `signIn()` compounded it by only acting `if (code)`, so an `?error=` coming back from Supabase was swallowed entirely: no session, no message, straight back to the landing screen. Both branches are handled now.
 
-> **A second account failing while the first works is the development-mode allowlist.** [Spotify's quota-modes docs](https://developer.spotify.com/documentation/web-api/concepts/quota-modes): a development-mode app allows **5** users, each added individually under Settings → User Management in the dashboard. A non-allowlisted account *can* complete the login flow, but every API call with its token gets a **403** — including the `/v1/me` profile fetch Supabase makes while creating the user. That failure aborts the callback, which is why it looks like login silently doing nothing. Same shape as the 429 problem in `../CLAUDE.md`: it isn't our OAuth that breaks, it's Supabase's profile fetch on the shared `client_id`.
+> **A second account failing while the first works is the development-mode allowlist.** [Spotify's quota-modes docs](https://developer.spotify.com/documentation/web-api/concepts/quota-modes): a development-mode app allows **5** users, each added individually under Settings → User Management in the dashboard. A non-allowlisted account *can* complete the login flow, but every API call with its token gets a **403** — including the `/v1/me` profile fetch Supabase makes while creating the user. That failure aborts the callback, which is why it looks like login silently doing nothing. Same shape as the 429 problem in [`web.md`](web.md): it isn't our OAuth that breaks, it's Supabase's profile fetch on the shared `client_id`.
 
 Two things must stay in sync or sign-in breaks:
 1. The bridge URL must be in Supabase → Authentication → URL Configuration → **Redirect URLs**. If it isn't, Supabase does not error — it silently discards `redirectTo` and sends the user to the project's Site URL (`localhost:3000`), which on a phone shows *"Safari cannot connect to the server"*. Diagnose by reading the address bar of the failed page.

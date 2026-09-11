@@ -4,7 +4,7 @@
 //
 // This is the catalog source for the games, and it matters more here than on
 // web: the device has no app token, so /v1/search and the Spotify discography
-// endpoints are simply unavailable (see the table in CLAUDE.md). iTunes is
+// endpoints are simply unavailable (see the table in docs/mobile.md). iTunes is
 // keyless, so it needs no Spotify session at all.
 //
 // Used by:

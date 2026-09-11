@@ -1,8 +1,6 @@
-# CLAUDE.md
+# Engineering notes: web app
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-@AGENTS.md
+How the Next.js app, the Supabase backend and the Spotify integration fit together, and the gotchas found along the way. The Expo app has its own notes in [`mobile.md`](mobile.md). Paths are relative to the repo root.
 
 ## Commands
 
@@ -29,10 +27,10 @@ This repo holds **two npm projects** sharing one Supabase project and one Spotif
 | Path | What |
 |---|---|
 | `src/` | this Next.js 16 web app |
-| `mobile/` | the Expo app — has its own `CLAUDE.md`, read it before touching anything there |
+| `mobile/` | the Expo app — documented separately in [`mobile.md`](mobile.md) |
 | `supabase/functions/` | two Deno Edge Functions (`artist-events`, `spotify-search`), deployed by hand |
 
-> **Never run `expo` from the repo root.** The Expo CLI treats the root as an Expo project and rewrites the root `package.json`/`tsconfig.json` — it once downgraded `next` 16 → 9.3.3. Run every Expo command from `mobile/`. Recovery steps are in `mobile/CLAUDE.md`.
+> **Never run `expo` from the repo root.** The Expo CLI treats the root as an Expo project and rewrites the root `package.json`/`tsconfig.json` — it once downgraded `next` 16 → 9.3.3. Run every Expo command from `mobile/`. Recovery steps are in [`mobile.md`](mobile.md).
 
 **Next.js 16 App Router** project. All routes live under `src/app/`. Path alias `@/` maps to `src/`.
 
@@ -109,7 +107,7 @@ Each game lives at `/app/games/<slug>` with a server `page.tsx` (auth gate) that
   - **Music Quiz** questions are **hard general trivia about the world's biggest artists**, NOT the user's taste — a curated static bank in `src/lib/music-trivia.ts` (each `TriviaQuestion` authors the **correct answer as `options[0]`**; the route shuffles). The generator (`/api/quiz/generate`) needs **no Spotify for questions** — it picks 10 at random, then resolves an artist **photo** per question via `getArtistImage()` (bounded concurrency 3). `photoArtistFor(id)` (in `music-trivia.ts`) maps an id-prefix → the artist to show; it returns `null` for "identify this band" questions where a photo would spoil the answer, so those fall back to the "?" placeholder.
   - **Lyric → Song** has **two modes**, chosen in the `LyricSongGame` wrapper (`lyric-song-game.tsx`): *Your Top 50* (lyrics from the user's Spotify top tracks) and *By Artist* (pick an artist via the reusable `ArtistPicker`, lyrics from that artist's iTunes catalogue). The wrapper just swaps the generator endpoint (`?artistName=` for artist mode) passed to `MultipleChoiceGame`.
 - **Name That Song** (`guess-second`, `name-song-game.tsx`): pick an artist → guess the song from a 5-second clip. Sources **both the song list and the audio from iTunes**, NOT Spotify — so the clip always matches the label and you get the artist's whole catalog. Has a 3-2-1 "get ready" countdown over the artist photo while rounds load in the background. Per-artist leaderboard via `get_name_song_leaderboard` (end screen + artist page). Scores attach `artist_id`/`artist_name`/`artist_image` to the `scores` row.
-- **Higher or Lower** (`higher-lower`, `higher-lower-game.tsx`): endless survival on follower counts of a **fixed pool of famous artists** (`src/lib/higher-lower-artists.ts`) — NOT the user's own artists. **Currently paused** (card `available: false` in `games-grid.tsx`): the static pool needs real follower numbers, which require ~200 single-artist calls that keep tripping Spotify's 429. See the `higher-lower-game-pending` memory for how to finish.
+- **Higher or Lower** (`higher-lower`, `higher-lower-game.tsx`): endless survival on follower counts of a **fixed pool of famous artists** (`src/lib/higher-lower-artists.ts`) — NOT the user's own artists. **Currently paused** (card `available: false` in `games-grid.tsx`): the static pool needs real follower numbers, which require ~200 single-artist calls that keep tripping Spotify's 429.
 
 **External no-key APIs** (because Spotify can't provide these):
 - **Lyrics** → `lrclib.net` (`/api/search?track_name=&artist_name=`), free, no auth. Send a `User-Agent`. Used by `lyric-song` to build snippets; it skips lines containing the title/artist so the answer isn't given away. **lrclib hard-throttles request bursts** — ~20 parallel requests get 429'd down to ~6 successes (this once capped rounds at 6 questions). Fetch through a **bounded worker pool (≤5)** with early-stop, never `Promise.all` over the whole sample.
@@ -126,7 +124,7 @@ Spotify has no concerts endpoint, so tour dates come from the **Ticketmaster Dis
 - **One night = several listings** (presale link, main event page, multi-night package). `dedupe()` keeps one row per `date + venue`, preferring a `ticketmaster.com` URL with a real start time. It runs before the result slice; the fetch is `size=100` because listings collapse roughly 2:1.
 - **Caching** (in-memory): attraction ids 7d (misses 1h), events 6h (empty 30min), plus an in-flight map. A *failed* request is never cached as a miss at either level — `resolveAttractionId()` returns `{ ok, id }` so a lookup failure can't be stored as "no shows".
 - Route: `src/app/api/events` (auth-gated, `rateLimit` 20/10s). UI: the "Live Dates" section in `artist-detail.tsx` — first 5 dates plus a "Show all" expander, hidden when unconfigured or empty.
-- **Mobile** goes through the `artist-events` Supabase Edge Function (`supabase/functions/artist-events/index.ts`, a Deno port of `src/lib/ticketmaster.ts` — keep the two in sync), called from `mobile/lib/events.ts`. Deployed by hand with `TICKETMASTER_API_KEY` as a function secret and "Verify JWT" on. The other edge function, `spotify-search`, gives mobile catalog search the same way (see `mobile/CLAUDE.md`).
+- **Mobile** goes through the `artist-events` Supabase Edge Function (`supabase/functions/artist-events/index.ts`, a Deno port of `src/lib/ticketmaster.ts` — keep the two in sync), called from `mobile/lib/events.ts`. Deployed by hand with `TICKETMASTER_API_KEY` as a function secret and "Verify JWT" on. The other edge function, `spotify-search`, gives mobile catalog search the same way (see [`mobile.md`](mobile.md)).
 
 ## Listening Map
 
