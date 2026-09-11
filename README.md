@@ -13,41 +13,41 @@ The Listening Map: every country is filled with the photo of its #1 artist by mi
 <p align="center"><img src="docs/screenshots/web-map.jpg" width="820" alt="Listening Map: a world map with each country painted with its top artist"></p>
 
 <p align="center">
-  <img src="docs/screenshots/web-stats.jpg" width="405" alt="Listening Stats: streak, plays, listening time, badges and an hour-of-day histogram">
-  <img src="docs/screenshots/web-artist.jpg" width="405" alt="Artist page: your top tracks, Ticketmaster live dates, per-artist leaderboard and fans">
+  <img src="docs/screenshots/web-profile.jpg" width="270" alt="Profile: banner, avatar, points, rank and favourite songs">
+  <img src="docs/screenshots/web-stats.jpg" width="270" alt="Listening Stats: streak, plays, listening time, badges and an hour-of-day histogram">
+  <img src="docs/screenshots/web-artist.jpg" width="270" alt="Artist page: your top tracks, Ticketmaster live dates, per-artist leaderboard and fans">
 </p>
 
 <details>
 <summary><b>More web screenshots</b></summary>
 <br>
 <p align="center">
+  <img src="docs/screenshots/web-profile-listening.jpg" width="405" alt="Profile: most played, now playing, recently played, top artists and albums">
   <img src="docs/screenshots/web-games.jpg" width="405" alt="Games menu">
   <img src="docs/screenshots/web-name-that-song.jpg" width="405" alt="Name That Song: a 5-second clip and four options">
   <img src="docs/screenshots/web-artists.jpg" width="405" alt="Your Artists: your top artists this month, plus catalogue search">
-  <img src="docs/screenshots/web-profile.jpg" width="405" alt="Profile: banner, avatar, points, rank and favourite songs">
-  <img src="docs/screenshots/web-profile-listening.jpg" width="405" alt="Profile: most played, now playing, recently played, top artists and albums">
 </p>
 </details>
 
 ### Mobile
 
 <p align="center">
+  <img src="docs/screenshots/mobile-profile.jpg" width="200" alt="Profile with points, rank, minutes listened and favourite songs">
   <img src="docs/screenshots/mobile-stats.jpg" width="200" alt="Listening stats: all-time listening time, plays, streak and badges">
   <img src="docs/screenshots/mobile-name-that-song.jpg" width="200" alt="Name That Song: guess the track from a 5-second clip">
   <img src="docs/screenshots/mobile-artist.jpg" width="200" alt="Artist page with your top tracks by that artist">
-  <img src="docs/screenshots/mobile-profile.jpg" width="200" alt="Profile with points, rank, minutes listened and favourite songs">
 </p>
 
 <details>
 <summary><b>More mobile screenshots</b></summary>
 <br>
 <p align="center">
-  <img src="docs/screenshots/mobile-games.jpg" width="200" alt="Games menu">
-  <img src="docs/screenshots/mobile-artists.jpg" width="200" alt="Your artists, led by your #1 of the month">
-  <img src="docs/screenshots/mobile-stats-hours.jpg" width="200" alt="Hour-of-day listening histogram and most played tracks">
-  <img src="docs/screenshots/mobile-artist-live-dates.jpg" width="200" alt="Artist page: Ticketmaster live dates, per-artist leaderboard and fans">
   <img src="docs/screenshots/mobile-profile-most-played.jpg" width="200" alt="Profile: most played tracks and now playing">
   <img src="docs/screenshots/mobile-profile-top.jpg" width="200" alt="Profile: recently played and your top artists">
+  <img src="docs/screenshots/mobile-stats-hours.jpg" width="200" alt="Hour-of-day listening histogram and most played tracks">
+  <img src="docs/screenshots/mobile-games.jpg" width="200" alt="Games menu">
+  <img src="docs/screenshots/mobile-artists.jpg" width="200" alt="Your artists, led by your #1 of the month">
+  <img src="docs/screenshots/mobile-artist-live-dates.jpg" width="200" alt="Artist page: Ticketmaster live dates, per-artist leaderboard and fans">
 </p>
 </details>
 
