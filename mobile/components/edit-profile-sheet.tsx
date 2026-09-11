@@ -14,6 +14,7 @@ import {
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { COUNTRY_LIST, countryName, flagUrl } from "@/lib/countries";
 import { pickAndUploadImage, saveProfile, type ProfileFields } from "@/lib/profile";
 import { colors } from "@/theme/colors";
@@ -21,7 +22,15 @@ import { colors } from "@/theme/colors";
 type Initial = {
   username: string;
   bio: string;
+  /**
+   * The CUSTOM avatar only — null means "no custom photo", not "no photo".
+   * Seeding this with the resolved avatar would quietly promote the Spotify
+   * picture into custom_avatar_url on the next save, and would make removing a
+   * photo impossible to express.
+   */
   avatarUrl: string | null;
+  /** Spotify's picture, shown as the preview when there is no custom one. */
+  fallbackAvatarUrl?: string | null;
   bannerUrl: string | null;
   country: string | null;
 };
@@ -31,7 +40,7 @@ type Props = {
   onClose: () => void;
   userId: string;
   initial: Initial;
-  onSaved: (data: Initial) => void;
+  onSaved: (data: Omit<Initial, "fallbackAvatarUrl">) => void;
 };
 
 export default function EditProfileSheet({
@@ -54,6 +63,10 @@ export default function EditProfileSheet({
   const [countryOpen, setCountryOpen] = useState(false);
 
   const busy = saving || uploadingAvatar || uploadingBanner;
+  // What the user sees. `avatarUrl` is the custom layer; when they remove it the
+  // preview drops back to Spotify's picture, which is exactly what the profile
+  // will show afterwards.
+  const previewAvatar = avatarUrl ?? initial.fallbackAvatarUrl ?? null;
 
   async function pick(kind: "avatar" | "banner") {
     setError(null);
@@ -166,21 +179,53 @@ export default function EditProfileSheet({
               {uploadingBanner ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600" }}>
-                  📷  Change banner
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <IconSymbol name="camera.fill" size={15} color="#fff" />
+                  <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600" }}>
+                    {bannerUrl ? "Change banner" : "Add banner"}
+                  </Text>
+                </View>
               )}
             </View>
+
+            {/* Nested Pressable: RN gives the touch to the inner one, so this
+                removes rather than reopening the picker. */}
+            {bannerUrl && !uploadingBanner ? (
+              <Pressable
+                onPress={() => setBannerUrl(null)}
+                hitSlop={8}
+                style={({ pressed }) => ({
+                  position: "absolute",
+                  top: 12,
+                  right: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 5,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 999,
+                  backgroundColor: pressed ? "rgba(0,0,0,0.8)" : "rgba(0,0,0,0.55)",
+                })}>
+                <IconSymbol name="xmark" size={12} color="#fff" />
+                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Remove</Text>
+              </Pressable>
+            ) : null}
           </Pressable>
 
           {/* Avatar overlapping the banner */}
-          <View style={{ paddingHorizontal: 20 }}>
+          <View
+            style={{
+              paddingHorizontal: 20,
+              flexDirection: "row",
+              alignItems: "flex-end",
+              gap: 14,
+            }}>
             <Pressable
               onPress={() => pick("avatar")}
               style={{ marginTop: -40, width: 88, height: 88 }}>
-              {avatarUrl ? (
+              {previewAvatar ? (
                 <Image
-                  source={avatarUrl}
+                  source={previewAvatar}
                   style={{
                     width: 88,
                     height: 88,
@@ -202,7 +247,7 @@ export default function EditProfileSheet({
                     alignItems: "center",
                     justifyContent: "center",
                   }}>
-                  <Text style={{ fontSize: 30 }}>🎵</Text>
+                  <IconSymbol name="music.note" size={28} color={colors.primary} />
                 </View>
               )}
               <View
@@ -222,10 +267,23 @@ export default function EditProfileSheet({
                 {uploadingAvatar ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={{ fontSize: 13 }}>📷</Text>
+                  <IconSymbol name="camera.fill" size={13} color="#fff" />
                 )}
               </View>
             </Pressable>
+
+            {/* Only offered when there IS a custom photo — removing it reverts to
+                the Spotify picture, which the preview shows immediately. */}
+            {avatarUrl && !uploadingAvatar ? (
+              <Pressable
+                onPress={() => setAvatarUrl(null)}
+                hitSlop={8}
+                style={({ pressed }) => ({ paddingBottom: 6, opacity: pressed ? 0.6 : 1 })}>
+                <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "600" }}>
+                  Remove photo
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
 
           {/* Fields */}
@@ -286,9 +344,12 @@ export default function EditProfileSheet({
               </Text>
             </Field>
 
-            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
-              💡 GIFs work for both avatar and banner.
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <IconSymbol name="lightbulb.fill" size={13} color={colors.mutedForeground} />
+              <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
+                GIFs work for both avatar and banner.
+              </Text>
+            </View>
 
             {error ? (
               <View
@@ -428,7 +489,7 @@ function CountryPicker({
                   {item.name}
                 </Text>
                 {isSel ? (
-                  <Text style={{ color: colors.primary, fontSize: 16 }}>✓</Text>
+                  <IconSymbol name="checkmark" size={16} color={colors.primary} />
                 ) : null}
               </Pressable>
             );

@@ -36,6 +36,15 @@ async function topGenres(session: Parameters<typeof resolveSpotifyUserToken>[0])
     .slice(0, 6)
 }
 
+/**
+ * Top tracks for the table. The 50 is a DISPLAY cap.
+ *
+ * Never derive an aggregate from this list's length or sum — it saturates at 50
+ * and silently stops growing. That's exactly how "plays" came to undercount
+ * everyone past 50 distinct tracks, drifting further the more they listened.
+ * Totals come from totalPlayCount() instead. (Mirrored in the Expo app's
+ * app/(tabs)/stats.tsx.)
+ */
 async function counts(
   supabase: Awaited<ReturnType<typeof createClient>>,
   since: string | null
@@ -46,6 +55,19 @@ async function counts(
   return (data as PlayCount[]) ?? []
 }
 
+/**
+ * Every play we've recorded. `play_history` holds one row per play, so a head
+ * count *is* the total — exact, uncapped, and it transfers no rows at all.
+ */
+async function totalPlayCount(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<number> {
+  const { count } = await supabase
+    .from("play_history")
+    .select("*", { count: "exact", head: true })
+  return count ?? 0
+}
+
 export default async function StatsPage() {
   const supabase = await createClient()
 
@@ -54,14 +76,23 @@ export default async function StatsPage() {
   const monthAgo = new Date(now - 30 * 86_400_000).toISOString()
 
   const { data: { session } } = await supabase.auth.getSession()
+  const uid = session?.user.id
 
-  const [week, month, all, { data: days }, { data: hours }, { count: favArtists }, genres, { data: minutesRows }] = await Promise.all([
+  const [week, month, all, totalPlays, { data: days }, { data: hours }, { count: favArtists }, genres, { data: minutesRows }] = await Promise.all([
     counts(supabase, weekAgo),
     counts(supabase, monthAgo),
     counts(supabase, null),
+    totalPlayCount(supabase),
     supabase.rpc("get_play_days", { p_tz: "UTC" }),
     supabase.rpc("get_play_hours", { p_tz: "UTC" }),
-    supabase.from("favorite_artists").select("artist_id", { count: "exact", head: true }),
+    // Must be scoped explicitly: favorite_artists is public-read (artist pages
+    // list fans), so RLS doesn't narrow this to the caller.
+    uid
+      ? supabase
+          .from("favorite_artists")
+          .select("artist_id", { count: "exact", head: true })
+          .eq("user_id", uid)
+      : Promise.resolve({ count: 0 }),
     topGenres(session),
     supabase.rpc("get_listening_minutes"),
   ])
@@ -78,8 +109,6 @@ export default async function StatsPage() {
   const firstPlay = m?.first_play ? new Date(m.first_play as string).getTime() : null
   const trackedDays = firstPlay ? Math.floor((now - firstPlay) / 86_400_000) : 0
 
-  const totalPlays = all.reduce((sum, t) => sum + Number(t.play_count), 0)
-
   const dayList = ((days as { day: string }[]) ?? []).map((d) => d.day)
   const todayIso = new Date().toISOString().slice(0, 10)
   const streak = computeStreak(dayList, todayIso)
@@ -95,6 +124,8 @@ export default async function StatsPage() {
 
   const badges = computeBadges({
     totalPlays,
+    // Saturates at the 50 above, which is fine *only* because the Explorer
+    // badge asks ">= 50". Don't reuse this as a real distinct-track count.
     uniqueTracks: all.length,
     currentStreak: streak.current,
     hasNightPlay,

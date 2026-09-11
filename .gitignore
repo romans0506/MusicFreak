@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# expo (guard: running expo from the repo root by accident creates this)
+/.expo/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
@@ -39,3 +42,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Supabase CLI scratch (project ref, cli version) — regenerated on every command
+**/supabase/.temp/

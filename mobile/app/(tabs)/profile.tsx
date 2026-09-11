@@ -1,23 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeInDown } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import EditProfileSheet from "@/components/edit-profile-sheet";
+import { PullRefreshScroll } from "@/components/pull-refresh";
 import FavoriteSongs from "@/components/favorite-songs";
-import { GlassCard } from "@/components/glass-card";
-import { GlowBackground } from "@/components/glow-background";
+import { Surface } from "@/components/surface";
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { SpotifyReconnect } from "@/components/spotify-reconnect";
 import { AnimatedSpotifyStats } from "@/components/spotify-stats";
 import { useSession } from "@/lib/auth";
 import { countryName, flagUrl } from "@/lib/countries";
+import { ingestRecentPlays } from "@/lib/scrobble";
 import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
 
@@ -87,12 +83,18 @@ async function fetchStats(userId: string): Promise<Stats> {
     rank,
     mostPlayed: (mostPlayed ?? []) as MostPlayed[],
     minutesTotal: Math.floor(Number(m?.total_ms ?? 0) / 60000),
+    // NOTE: this is get_listening_minutes' own week, whose windowing (calendar
+    // vs rolling, and in which timezone) isn't in the repo. The Stats screen no
+    // longer trusts it — it sums a rolling 7 days from play_history so both
+    // halves of its hero describe the same window — so if that RPC turns out to
+    // use calendar weeks, this figure and the Stats Week page will disagree.
     minutesWeek: Math.floor(Number(m?.week_ms ?? 0) / 60000),
     profile: (profile ?? null) as ProfileRow | null,
   };
 }
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const { session, signOut } = useSession();
   const user = session?.user;
   const userId = user?.id;
@@ -101,6 +103,12 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState(false);
+  // Bumped on pull. The Spotify panel keeps its own state, so without this a
+  // pull refreshed the Supabase numbers and left the Spotify block untouched —
+  // which is the one part of this screen a pull is most likely aimed at.
+  const [spotifyRefresh, setSpotifyRefresh] = useState(0);
+  /** Bumped on open so the edit sheet remounts with fresh values — see below. */
+  const [editSeed, setEditSeed] = useState(0);
 
   // Local overrides applied immediately after an edit so the UI updates without
   // a refetch (the stats refetch still happens in the background on pull).
@@ -129,7 +137,10 @@ export default function ProfileScreen() {
     if (!userId) return;
     setRefreshing(true);
     try {
+      // Bank any new plays first, so the numbers below actually move.
+      await ingestRecentPlays({ force: true });
       setStats(await fetchStats(userId));
+      setSpotifyRefresh((n) => n + 1);
     } finally {
       setRefreshing(false);
     }
@@ -145,10 +156,17 @@ export default function ProfileScreen() {
   const p = stats?.profile;
   const displayName = override?.username || p?.username || spotifyName;
   const bio = override?.bio ?? p?.bio ?? "";
-  const avatarUrl =
-    override?.avatarUrl ?? p?.custom_avatar_url ?? p?.avatar_url ?? spotifyAvatar ?? null;
-  const bannerUrl = override?.bannerUrl ?? p?.banner_url ?? null;
-  const country = override?.country ?? p?.country ?? null;
+  // `override` is all-or-nothing: once an edit has been saved it is the truth
+  // for every field it carries. Using `??` per field would make "the user
+  // removed their photo" (null) indistinguishable from "not edited", so a
+  // removal would immediately reappear from the stale row underneath.
+  const customAvatar = override ? override.avatarUrl : (p?.custom_avatar_url ?? null);
+  const bannerUrl = override ? override.bannerUrl : (p?.banner_url ?? null);
+  const country = override ? override.country : (p?.country ?? null);
+  // Displayed avatar follows the app-wide precedence: custom, then Spotify's,
+  // then initials. The editor edits only the custom layer.
+  const spotifyAvatarUrl = p?.avatar_url ?? spotifyAvatar ?? null;
+  const avatarUrl = customAvatar ?? spotifyAvatarUrl;
 
   const joined = user?.created_at
     ? new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(
@@ -164,37 +182,28 @@ export default function ProfileScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <GlowBackground />
-      <ScrollView
+      <PullRefreshScroll
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        indicatorTop={insets.top + 8}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.mutedForeground}
-          />
-        }>
-        {/* Hero banner */}
-        <View style={{ height: 180 }}>
+        contentContainerStyle={{ paddingBottom: 40 }}>
+        {/* Hero banner. With no banner the block is page-coloured and shorter,
+            so there's no empty slab above the avatar. */}
+        <View style={{ height: bannerUrl ? 180 : 130 }}>
           {bannerUrl ? (
             <Image source={bannerUrl} style={{ width: "100%", height: "100%" }} contentFit="cover" />
-          ) : (
-            <LinearGradient
-              colors={[colors.primary + "66", colors.primary + "1A", colors.background]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ width: "100%", height: "100%" }}
-            />
-          )}
-          {/* fade into the page so the banner blends down */}
-          <LinearGradient
-            colors={["transparent", "transparent", colors.background]}
-            style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 90 }}
-          />
+          ) : null}
           {/* Edit pill */}
           <Pressable
-            onPress={() => setEditing(true)}
+            onPress={() => {
+              // Guard as well as re-seed: opening before `load()` resolves would
+              // seed the sheet from an empty profile row.
+              if (loading) return;
+              setEditSeed((n) => n + 1);
+              setEditing(true);
+            }}
+            disabled={loading}
             hitSlop={8}
             style={({ pressed }) => ({
               position: "absolute",
@@ -211,7 +220,8 @@ export default function ProfileScreen() {
               borderWidth: 1,
               borderColor: "rgba(255,255,255,0.18)",
             })}>
-            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>✎ Edit</Text>
+            <IconSymbol name="pencil" size={13} color="#fff" />
+            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>Edit</Text>
           </Pressable>
         </View>
 
@@ -282,11 +292,6 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
               ) : null}
-              {joined ? (
-                <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
-                  Joined {joined}
-                </Text>
-              ) : null}
             </View>
           </View>
         </Animated.View>
@@ -302,7 +307,7 @@ export default function ProfileScreen() {
             {/* Stat cards */}
             <View style={{ flexDirection: "row", gap: 12 }}>
               {statCards.map((s) => (
-                <GlassCard
+                <Surface
                   key={s.label}
                   radius={22}
                   style={{ flex: 1 }}
@@ -319,13 +324,13 @@ export default function ProfileScreen() {
                     {s.value}
                   </Text>
                   <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{s.label}</Text>
-                </GlassCard>
+                </Surface>
               ))}
             </View>
 
             {/* Listening time */}
             {(stats?.minutesTotal ?? 0) > 0 ? (
-              <GlassCard contentStyle={{ flexDirection: "row", padding: 18 }}>
+              <Surface contentStyle={{ flexDirection: "row", padding: 18 }}>
                 <View style={{ flex: 1, gap: 3 }}>
                   <Text style={{ color: colors.foreground, fontSize: 20, fontWeight: "800" }}>
                     {(stats?.minutesTotal ?? 0).toLocaleString("en")} min
@@ -339,11 +344,11 @@ export default function ProfileScreen() {
                   </Text>
                   <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>This week</Text>
                 </View>
-              </GlassCard>
+              </Surface>
             ) : null}
 
             {/* Favorite songs (Supabase) */}
-            {userId ? <FavoriteSongs userId={userId} /> : null}
+            {userId ? <FavoriteSongs /> : null}
 
             {/* Most played */}
             {stats && stats.mostPlayed.length > 0 ? (
@@ -351,7 +356,7 @@ export default function ProfileScreen() {
                 <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "700" }}>
                   Your Most Played
                 </Text>
-                <GlassCard radius={22}>
+                <Surface radius={22}>
                   {stats.mostPlayed.map((t, i) => (
                     <View
                       key={t.track_id}
@@ -389,7 +394,7 @@ export default function ProfileScreen() {
                             alignItems: "center",
                             justifyContent: "center",
                           }}>
-                          <Text style={{ fontSize: 16 }}>🎵</Text>
+                          <IconSymbol name="music.note" size={16} color={colors.mutedForeground} />
                         </View>
                       )}
                       <View style={{ flex: 1, gap: 2 }}>
@@ -414,34 +419,52 @@ export default function ProfileScreen() {
                       </Text>
                     </View>
                   ))}
-                </GlassCard>
+                </Surface>
               </View>
             ) : null}
 
-            {/* Spotify stats (Now Playing / Recently Played / Top …) */}
-            <AnimatedSpotifyStats />
+            {/* Only rendered if the Spotify connection actually needs redoing. */}
+            <SpotifyReconnect />
 
-            {/* Sign out */}
-            <Pressable
-              onPress={signOut}
-              style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.97 : 1 }] })}>
-              <GlassCard radius={18} glow={false} contentStyle={{ paddingVertical: 15, alignItems: "center" }}>
-                <Text style={{ color: colors.red, fontSize: 16, fontWeight: "600" }}>Sign out</Text>
-              </GlassCard>
-            </Pressable>
+            {/* Spotify stats (Now Playing / Recently Played / Top …) */}
+            <AnimatedSpotifyStats refreshKey={spotifyRefresh} />
+
+            {/* Sign out, with the join date under it. */}
+            <View style={{ gap: 12 }}>
+              <Pressable
+                onPress={signOut}
+                style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.97 : 1 }] })}>
+                <Surface radius={18} glow={false} contentStyle={{ paddingVertical: 15, alignItems: "center" }}>
+                  <Text style={{ color: colors.red, fontSize: 16, fontWeight: "600" }}>Sign out</Text>
+                </Surface>
+              </Pressable>
+              {joined ? (
+                <Text
+                  style={{ color: colors.mutedForeground, fontSize: 12, textAlign: "center" }}>
+                  Joined {joined}
+                </Text>
+              ) : null}
+            </View>
           </Animated.View>
         )}
-      </ScrollView>
+      </PullRefreshScroll>
 
       {userId ? (
         <EditProfileSheet
+          // Remounts on every open so its fields re-seed from current data.
+          // Without this the sheet keeps whatever `initial` held on the profile
+          // screen's FIRST render — which, straight after a login, is before the
+          // profile row has loaded. Saving then wrote those empty values back
+          // and wiped the user's avatar and banner.
+          key={editSeed}
           visible={editing}
           onClose={() => setEditing(false)}
           userId={userId}
           initial={{
             username: override?.username || p?.username || spotifyName,
             bio: override?.bio ?? p?.bio ?? "",
-            avatarUrl,
+            avatarUrl: customAvatar,
+            fallbackAvatarUrl: spotifyAvatarUrl,
             bannerUrl,
             country,
           }}

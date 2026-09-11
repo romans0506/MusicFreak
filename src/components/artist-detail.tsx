@@ -3,10 +3,11 @@
 import { useState, useRef, useTransition, useEffect } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
-import { ArrowLeft, Heart, Play, Pause, Music2, Users, Loader2, Trophy, Gamepad2, Globe } from "lucide-react"
+import { ArrowLeft, Heart, Play, Pause, Music2, Users, Loader2, Trophy, Gamepad2, Globe, CalendarDays, Ticket, ChevronDown } from "lucide-react"
 import countries from "i18n-iso-countries"
 import enLocale from "i18n-iso-countries/langs/en.json"
 import { cn } from "@/lib/utils"
+import type { LiveEvent } from "@/lib/ticketmaster"
 
 countries.registerLocale(enLocale)
 
@@ -72,6 +73,28 @@ function formatDuration(ms: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
 }
 
+/** Dates shown before the "show all" expander. */
+const EVENT_PREVIEW_COUNT = 5
+
+// Event dates are bare local "YYYY-MM-DD" strings. new Date() would treat them
+// as UTC midnight and shift the day for anyone west of Greenwich, so read the
+// parts off the string.
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+
+function monthLabel(date: string) {
+  return MONTHS[Number(date.slice(5, 7)) - 1] ?? ""
+}
+
+function dayLabel(date: string) {
+  return String(Number(date.slice(8, 10)))
+}
+
+/** Year, shown only when the date isn't in the current one. */
+function yearLabel(date: string) {
+  const year = date.slice(0, 4)
+  return year === String(new Date().getFullYear()) ? "" : year
+}
+
 function formatFollowers(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
@@ -85,11 +108,18 @@ export default function ArtistDetail({ artist, artistId, fans, isFavorited, love
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [tracks, setTracks] = useState<SpotifyTrack[]>([])
   const [tracksLoading, setTracksLoading] = useState(true)
+  const [events, setEvents] = useState<LiveEvent[]>([])
+  const [eventsLoading, setEventsLoading] = useState(true)
+  // null until known. No API key means hide the section, which is not the
+  // same as "no shows".
+  const [eventsConfigured, setEventsConfigured] = useState<boolean | null>(null)
+  const [showAllEvents, setShowAllEvents] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const artistImage = artist.images[0]?.url
+  const visibleEvents = showAllEvents ? events : events.slice(0, EVENT_PREVIEW_COUNT)
 
   useEffect(() => {
     fetch(`/api/spotify/artist-tracks?artistId=${artistId}`)
@@ -99,6 +129,17 @@ export default function ArtistDetail({ artist, artistId, fans, isFavorited, love
       })
       .finally(() => setTracksLoading(false))
   }, [artistId])
+
+  useEffect(() => {
+    fetch(`/api/events?artistId=${artistId}&name=${encodeURIComponent(artist.name)}`)
+      .then(async (res) => {
+        const data = await res.json()
+        if (!res.ok) return
+        setEvents(data.events ?? [])
+        setEventsConfigured(data.configured !== false)
+      })
+      .finally(() => setEventsLoading(false))
+  }, [artistId, artist.name])
 
   function handleToggleFavorite() {
     const next = !favorited
@@ -291,6 +332,82 @@ export default function ArtistDetail({ artist, artistId, fans, isFavorited, love
                     </Row>
                   )
                 })}
+              </div>
+            )}
+
+            {/* Live dates (Ticketmaster). Hidden when unconfigured or empty. */}
+            {eventsConfigured !== false && (eventsLoading || events.length > 0) && (
+              <div className="mt-10">
+                <div className="mb-4 flex items-baseline justify-between gap-3">
+                  <h2 className="flex items-center gap-2 text-lg font-semibold">
+                    <CalendarDays className="size-4 text-primary" />
+                    Live Dates
+                  </h2>
+                  <span className="text-xs text-muted-foreground">via Ticketmaster</span>
+                </div>
+
+                {eventsLoading ? (
+                  <div className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-card py-14 text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    <span className="text-sm">Looking for shows…</span>
+                  </div>
+                ) : (
+                  <>
+                  <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                    {visibleEvents.map((event, i) => (
+                      <a
+                        key={event.id}
+                        href={event.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          "flex items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/50",
+                          i < visibleEvents.length - 1 && "border-b border-border"
+                        )}
+                      >
+                        <div className="flex size-12 shrink-0 flex-col items-center justify-center rounded-xl bg-primary/10 leading-none">
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">
+                            {monthLabel(event.date)}
+                          </span>
+                          <span className="text-base font-bold tabular-nums">{dayLabel(event.date)}</span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{event.venue ?? event.name}</p>
+                          <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                            {event.country && (
+                              <img
+                                src={`https://flagcdn.com/24x18/${event.country.toLowerCase()}.png`}
+                                srcSet={`https://flagcdn.com/48x36/${event.country.toLowerCase()}.png 2x`}
+                                alt=""
+                                width={16}
+                                height={12}
+                                className="rounded-[2px] object-cover"
+                              />
+                            )}
+                            <span className="truncate">
+                              {[event.city, yearLabel(event.date)].filter(Boolean).join(" · ")}
+                              {event.time ? ` · ${event.time.slice(0, 5)}` : ""}
+                            </span>
+                          </p>
+                        </div>
+                        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
+                          <Ticket className="size-3.5" />
+                          Tickets
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                  {events.length > EVENT_PREVIEW_COUNT && (
+                    <button
+                      onClick={() => setShowAllEvents((v) => !v)}
+                      className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-card py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                    >
+                      {showAllEvents ? "Show less" : `Show all ${events.length} dates`}
+                      <ChevronDown className={cn("size-4 transition-transform", showAllEvents && "rotate-180")} />
+                    </button>
+                  )}
+                  </>
+                )}
               </div>
             )}
 

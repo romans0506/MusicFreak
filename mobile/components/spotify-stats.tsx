@@ -1,22 +1,41 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { Image } from "expo-image";
+import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import Animated, { FadeIn } from "react-native-reanimated";
 
-import { GlassCard } from "@/components/glass-card";
+import { Surface } from "@/components/surface";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import {
-  getNowPlaying,
   getRecentlyPlayed,
   getTopStats,
-  type NowPlaying,
   type RecentTrack,
+  type TopArtist,
   type TopStats,
 } from "@/lib/spotify";
+import { useSpotifyEpoch } from "@/lib/spotify-auth";
+import { useNowPlaying } from "@/lib/now-playing";
 import { colors } from "@/theme/colors";
 
 function openSpotify(kind: "track" | "album", id?: string) {
   if (!id) return;
   Linking.openURL(`https://open.spotify.com/${kind}/${id}`).catch(() => {});
+}
+
+/** Same navigation as the Artists tab — push the in-app artist page. */
+function useOpenArtist() {
+  const router = useRouter();
+  return useCallback(
+    (artist: TopArtist) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      router.push({
+        pathname: "/artist/[id]",
+        params: { id: artist.id, name: artist.name, image: artist.image ?? "" },
+      });
+    },
+    [router],
+  );
 }
 
 function formatPlayed(playedAt: string) {
@@ -28,17 +47,19 @@ function formatPlayed(playedAt: string) {
   return then.toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" });
 }
 
-function SectionTitle({ emoji, title }: { emoji: string; title: string }) {
+type SymbolName = Parameters<typeof IconSymbol>[0]["name"];
+
+function SectionTitle({ icon, title }: { icon: SymbolName; title: string }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
-      <Text style={{ fontSize: 16 }}>{emoji}</Text>
+      <IconSymbol name={icon} size={16} color={colors.primary} />
       <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "700" }}>{title}</Text>
     </View>
   );
 }
 
 
-function Thumb({ uri, round, fallback }: { uri?: string; round?: boolean; fallback: string }) {
+function Thumb({ uri, round, fallback }: { uri?: string; round?: boolean; fallback: SymbolName }) {
   const radius = round ? 999 : 8;
   if (uri) {
     return (
@@ -55,26 +76,30 @@ function Thumb({ uri, round, fallback }: { uri?: string; round?: boolean; fallba
         alignItems: "center",
         justifyContent: "center",
       }}>
-      <Text style={{ fontSize: 16 }}>{fallback}</Text>
+      <IconSymbol name={fallback} size={16} color={colors.mutedForeground} />
     </View>
   );
 }
 
 const RECENT_PREVIEW = 4;
 
-export default function SpotifyStats() {
-  const [now, setNow] = useState<NowPlaying | null>(null);
+export default function SpotifyStats({ refreshKey = 0 }: { refreshKey?: number }) {
+  // Shared poller — see lib/now-playing.tsx for why this is not fetched here.
+  const now = useNowPlaying();
   const [recent, setRecent] = useState<RecentTrack[] | null>(null);
   const [stats, setStats] = useState<TopStats | null>(null);
   const [showAllRecent, setShowAllRecent] = useState(false);
 
+  // Refetch on reconnect (epoch) and on a pull-to-refresh from the profile
+  // (refreshKey). This used to be a bare [], which meant one failed fetch —
+  // an expired token, a dead network — left the panel empty until the app was
+  // remounted, and since it renders null when empty there was nothing on screen
+  // to pull on either. Signing out and back in was the only way to get it back.
+  const epoch = useSpotifyEpoch();
   useEffect(() => {
-    getNowPlaying().then(setNow);
     getRecentlyPlayed().then(setRecent);
     getTopStats().then(setStats);
-    const interval = setInterval(() => getNowPlaying().then(setNow), 30_000);
-    return () => clearInterval(interval);
-  }, []);
+  }, [epoch, refreshKey]);
 
   const hasAnything =
     now?.playing ||
@@ -89,13 +114,13 @@ export default function SpotifyStats() {
     <View style={{ gap: 26 }}>
       {/* Now Playing */}
       <View>
-        <SectionTitle emoji="📡" title="Now Playing" />
-        <GlassCard radius={22} contentStyle={{ padding: 14 }}>
+        <SectionTitle icon="dot.radiowaves.left.and.right" title="Now Playing" />
+        <Surface radius={22} contentStyle={{ padding: 14 }}>
           {now === null ? (
             <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>Loading…</Text>
           ) : now.playing && now.track ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-              <Thumb uri={now.track.albumArt} fallback="🎵" />
+              <Thumb uri={now.track.albumArt} fallback="music.note" />
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600", marginBottom: 2 }}>
                   ● Playing
@@ -110,20 +135,20 @@ export default function SpotifyStats() {
             </View>
           ) : (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <Thumb fallback="🎵" />
+              <Thumb fallback="music.note" />
               <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>
                 Not playing anything right now
               </Text>
             </View>
           )}
-        </GlassCard>
+        </Surface>
       </View>
 
       {/* Recently Played */}
       {recent && recent.length > 0 ? (
         <View>
-          <SectionTitle emoji="🕑" title="Recently Played" />
-          <GlassCard radius={22}>
+          <SectionTitle icon="clock.arrow.circlepath" title="Recently Played" />
+          <Surface radius={22}>
             {(showAllRecent ? recent : recent.slice(0, RECENT_PREVIEW)).map((t, i, arr) => (
               <Pressable
                 key={`${t.id}-${t.playedAt}`}
@@ -137,7 +162,7 @@ export default function SpotifyStats() {
                   borderBottomWidth: i < arr.length - 1 ? 1 : 0,
                   borderBottomColor: colors.border,
                 }}>
-                <Thumb uri={t.albumArt} fallback="🎵" />
+                <Thumb uri={t.albumArt} fallback="music.note" />
                 <View style={{ flex: 1 }}>
                   <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 14, fontWeight: "600" }}>
                     {t.name}
@@ -151,7 +176,7 @@ export default function SpotifyStats() {
                 </Text>
               </Pressable>
             ))}
-          </GlassCard>
+          </Surface>
           {recent.length > RECENT_PREVIEW ? (
             <Pressable
               onPress={() => setShowAllRecent((v) => !v)}
@@ -213,13 +238,14 @@ function YourTop({ stats }: { stats: TopStats }) {
   ].filter((x): x is { key: TopTab; label: string } => x !== null);
 
   const [tab, setTab] = useState<TopTab>(available[0]?.key ?? "artists");
+  const openArtist = useOpenArtist();
 
   return (
     <View>
-      <SectionTitle emoji="⭐" title="Your Top" />
+      <SectionTitle icon="star.fill" title="Your Top" />
 
       {/* Segmented toggle */}
-      <GlassCard
+      <Surface
         radius={999}
         glow={false}
         style={{ marginBottom: 16 }}
@@ -248,7 +274,7 @@ function YourTop({ stats }: { stats: TopStats }) {
             </Pressable>
           );
         })}
-      </GlassCard>
+      </Surface>
 
       {/* Carousel — bleeds to the screen edges for a premium feel */}
       <Animated.View key={tab} entering={FadeIn.duration(220)}>
@@ -259,7 +285,16 @@ function YourTop({ stats }: { stats: TopStats }) {
           contentContainerStyle={{ paddingHorizontal: 20, gap: 14 }}>
           {tab === "artists"
             ? stats.topArtists.map((a, i) => (
-                <View key={a.id} style={{ width: 96, alignItems: "center", gap: 8 }}>
+                <Pressable
+                  key={a.id}
+                  onPress={() => openArtist(a)}
+                  style={({ pressed }) => ({
+                    width: 96,
+                    alignItems: "center",
+                    gap: 8,
+                    opacity: pressed ? 0.7 : 1,
+                    transform: [{ scale: pressed ? 0.97 : 1 }],
+                  })}>
                   <View>
                     {a.image ? (
                       <Image
@@ -277,7 +312,7 @@ function YourTop({ stats }: { stats: TopStats }) {
                           alignItems: "center",
                           justifyContent: "center",
                         }}>
-                        <Text style={{ fontSize: 30 }}>🎤</Text>
+                        <IconSymbol name="music.mic" size={28} color={colors.mutedForeground} />
                       </View>
                     )}
                     <RankBadge rank={i + 1} />
@@ -305,7 +340,7 @@ function YourTop({ stats }: { stats: TopStats }) {
                       {a.genre}
                     </Text>
                   ) : null}
-                </View>
+                </Pressable>
               ))
             : null}
 
@@ -332,7 +367,7 @@ function YourTop({ stats }: { stats: TopStats }) {
                           alignItems: "center",
                           justifyContent: "center",
                         }}>
-                        <Text style={{ fontSize: 34 }}>🎵</Text>
+                        <IconSymbol name="music.note" size={30} color={colors.mutedForeground} />
                       </View>
                     )}
                     <RankBadge rank={i + 1} />
@@ -370,7 +405,7 @@ function YourTop({ stats }: { stats: TopStats }) {
                           alignItems: "center",
                           justifyContent: "center",
                         }}>
-                        <Text style={{ fontSize: 34 }}>💿</Text>
+                        <IconSymbol name="opticaldisc.fill" size={30} color={colors.mutedForeground} />
                       </View>
                     )}
                     <RankBadge rank={i + 1} />
@@ -391,10 +426,10 @@ function YourTop({ stats }: { stats: TopStats }) {
 }
 
 // Tiny wrapper so the parent can fade the whole block in.
-export function AnimatedSpotifyStats() {
+export function AnimatedSpotifyStats({ refreshKey }: { refreshKey?: number }) {
   return (
     <Animated.View entering={FadeIn.duration(400)}>
-      <SpotifyStats />
+      <SpotifyStats refreshKey={refreshKey} />
     </Animated.View>
   );
 }

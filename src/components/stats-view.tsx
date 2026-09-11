@@ -91,15 +91,14 @@ export default function StatsView({
         </div>
       </div>
 
-      {/* Summary */}
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:max-w-md">
+      {/* Summary. There was a "Unique songs" card here showing `all.length`, but
+          that list is capped at 50 for the table below, so it saturated and read
+          "50" for everyone past 50 distinct tracks. Dropped rather than fixed —
+          the count isn't worth a second query. */}
+      <div className="mb-6 grid gap-4 sm:max-w-[15rem]">
         <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-5">
           <span className="text-2xl font-bold text-primary">{totalPlays.toLocaleString("en")}</span>
           <span className="text-sm text-muted-foreground">Total plays tracked</span>
-        </div>
-        <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-5">
-          <span className="text-2xl font-bold text-primary">{all.length.toLocaleString("en")}</span>
-          <span className="text-sm text-muted-foreground">Unique songs</span>
         </div>
       </div>
 

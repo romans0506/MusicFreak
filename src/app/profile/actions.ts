@@ -48,3 +48,4 @@ export async function updateProfile(data: ProfileInput) {
   revalidatePath("/app/map")
   return { success: true }
 }
+
